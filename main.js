@@ -84,6 +84,9 @@ if (m.isGroup) {
 groupMetadata = await client.groupMetadata(m.chat).catch(() => null)
 groupName = groupMetadata?.subject || ''
 groupAdmins = groupMetadata?.participants.filter(p => (p.admin === 'admin' || p.admin === 'superadmin')) || []
+console.log('sender:', sender)
+console.log('botJid:', botJid)
+console.log('admins:', groupAdmins.map(p => p.id || p.jid))
 }
 const isBotAdmins = m.isGroup ? groupAdmins.some(p => {
   const pid = (p.id || p.jid || p.phoneNumber || '')
