@@ -96,23 +96,33 @@ allParticipants = groupMetadata?.participants || []
 groupAdmins = allParticipants.filter(p => p.admin === 'admin' || p.admin === 'superadmin')
 }
 
-// ✅ Busca el participante que coincida por JID o LID, luego verifica si es admin
-const findParticipant = (identifier) => {
-  const num = extractNumber(identifier)
-  return allParticipants.find(p =>
-    extractNumber(p.id) === num ||
-    extractNumber(p.lid) === num ||
-    // También busca el JID dentro de los admins LID comparando el objeto completo
-    p.id === identifier ||
-    p.lid === identifier
-  )
+// ✅ decodeJid: convierte cualquier JID/LID a formato limpio (igual que el handler de referencia)
+// Si el cliente no tiene decodeJid, usamos extractNumber como fallback
+const decodeJid = (jid) => {
+  if (!jid) return ''
+  if (typeof client.decodeJid === 'function') return client.decodeJid(jid)
+  return extractNumber(jid) + '@s.whatsapp.net'
 }
 
-// Busca el participante del sender y el bot en la lista completa
-const senderParticipant = findParticipant(sender)
-const botParticipant = findParticipant(botJid)
+// ✅ Busca el participante usando decodeJid en id Y lid (cubre LIDs de WhatsApp)
+const senderParticipant = m.isGroup
+  ? allParticipants.find(p =>
+      decodeJid(p.id) === sender ||
+      decodeJid(p.lid) === sender ||
+      extractNumber(p.id) === senderNum ||
+      extractNumber(p.lid) === senderNum
+    )
+  : null
 
-// Verifica si ese participante está en la lista de admins
+const botParticipant = m.isGroup
+  ? allParticipants.find(p =>
+      decodeJid(p.id) === botJid ||
+      decodeJid(p.lid) === botJid ||
+      extractNumber(p.id) === botNum ||
+      extractNumber(p.lid) === botNum
+    )
+  : null
+
 const isAdmins = m.isGroup
   ? senderParticipant?.admin === 'admin' || senderParticipant?.admin === 'superadmin'
   : false
