@@ -84,20 +84,9 @@ if (m.isGroup) {
 groupMetadata = await client.groupMetadata(m.chat).catch(() => null)
 groupName = groupMetadata?.subject || ''
 groupAdmins = groupMetadata?.participants.filter(p => (p.admin === 'admin' || p.admin === 'superadmin')) || []
-console.log('=== DEBUG ADMIN ===')
-console.log('sender:', sender)
-console.log('botJid:', botJid)
-console.log('admins ids:', JSON.stringify(groupAdmins.map(p => ({ id: p.id, jid: p.jid, lid: p.lid, phone: p.phoneNumber }))))
-console.log('===================')
 }
-const isBotAdmins = m.isGroup ? groupAdmins.some(p => {
-  const pid = (p.id || p.jid || p.phoneNumber || '')
-  return pid.includes(botJid.split('@')[0])
-}) : false
-const isAdmins = m.isGroup ? groupAdmins.some(p => {
-  const pid = (p.id || p.jid || p.phoneNumber || '')
-  return pid.includes(sender.split('@')[0])
-}) : false
+const isBotAdmins = m.isGroup ? groupAdmins.some(p => p.phoneNumber === botJid || p.jid === botJid || p.id === botJid || p.lid === botJid ) : false
+const isAdmins = m.isGroup ? groupAdmins.some(p => p.phoneNumber === sender || p.jid === sender || p.id === sender || p.lid === sender ) : false
 
 const chatData = global.db.data.chats[from]
 const consolePrimary = chatData.primaryBot
