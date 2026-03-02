@@ -132,16 +132,14 @@ export default async (client, m) => {
       groupMetadata = await client.groupMetadata(m.chat);
       groupName = groupMetadata?.subject || '';
       participants = groupMetadata?.participants || [];
-      // Extraer solo los JIDs de los participantes (ya decodificados)
-      const participantJids = participants.map(p => client.decodeJid(p.id || p.jid || ''));
-      // Usar la función getGroupAdmins importada para obtener los JIDs de los admins
-      groupAdmins = getGroupAdmins(participants.map(p => ({ id: p.id || p.jid, admin: p.admin }))) || [];
+      // Obtener admins en bruto y luego decodificar cada JID
+      const adminsRaw = getGroupAdmins(participants.map(p => ({ id: p.id || p.jid, admin: p.admin }))) || [];
+      groupAdmins = adminsRaw.map(id => client.decodeJid(id));
     } catch (err) {
       console.error('Error al obtener metadata del grupo:', err);
     }
   }
 
-  // Decodificar sender y botJid para comparación
   const decodedSender = client.decodeJid(sender);
   const isAdmins = m.isGroup ? groupAdmins.includes(decodedSender) : false;
   const isBotAdmins = m.isGroup ? groupAdmins.includes(botJid) : false;
