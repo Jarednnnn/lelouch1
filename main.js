@@ -38,21 +38,7 @@ function getAllSessionBots(client) {
   return bots;
 }
 
-// Función para escribir logs de depuración (se guarda en admin_debug.log)
-function writeDebugLog(data) {
-  const logPath = './admin_debug.log';
-  const timestamp = new Date().toISOString();
-  fs.appendFileSync(logPath, `[${timestamp}] ${data}\n`);
-}
-
 export default async (client, m) => {
-  // --- LOG INICIAL ---
-  writeDebugLog('=== NUEVO MENSAJE ===');
-  writeDebugLog(`m.sender: ${m.sender}`);
-  writeDebugLog(`m.chat: ${m.chat}`);
-  writeDebugLog(`m.isGroup: ${m.isGroup}`);
-  writeDebugLog(`m.text: ${m.text}`);
-
   if (!m.message) return;
 
   const sender = m.sender || '';
@@ -154,16 +140,11 @@ export default async (client, m) => {
     }
   }
 
-  if (!match) {
-    writeDebugLog('No se encontró prefijo');
-    return;
-  }
+  if (!match) return;
   let usedPrefix = (match[0] || [])[0] || '';
   let args = m.text.slice(usedPrefix.length).trim().split(' ');
   let command = (args.shift() || '').toLowerCase();
   let text = args.join(' ');
-
-  writeDebugLog(`Comando detectado: ${command}`);
 
   const pushname = m.pushName || 'Sin nombre';
   let groupMetadata = null;
@@ -183,18 +164,12 @@ export default async (client, m) => {
         .map(p => p.id || p.jid || '')
         .filter(Boolean);
     } catch (err) {
-      writeDebugLog(`Error al obtener metadata del grupo: ${err.message}`);
+      console.error('Error al obtener metadata del grupo:', err);
     }
   }
 
   const isAdmins = m.isGroup ? groupAdmins.some(admin => areJidsSameUser(admin, sender)) : false;
   const isBotAdmins = m.isGroup ? groupAdmins.some(admin => areJidsSameUser(admin, botJid)) : false;
-
-  writeDebugLog(`groupAdmins: ${JSON.stringify(groupAdmins)}`);
-  writeDebugLog(`sender: ${sender}`);
-  writeDebugLog(`isAdmins: ${isAdmins}`);
-  writeDebugLog(`botJid: ${botJid}`);
-  writeDebugLog(`isBotAdmins: ${isBotAdmins}`);
 
   const chatData = global.db.data.chats[from];
   const consolePrimary = chatData?.primaryBot;
@@ -217,13 +192,12 @@ export default async (client, m) => {
       const primaryInSessions = getAllSessionBots(client).includes(consolePrimary);
       // Solo ceder si el bot primario está en el grupo y en sesiones
       if (primaryInSessions && primaryInGroup) {
-        writeDebugLog(`Cediendo comando a primaryBot: ${consolePrimary}`);
         return;
       }
     }
   }
 
-  // Log de consola original (puedes mantenerlo o quitarlo)
+  // Log de consola original
   const h = chalk.bold.blue('╭────────────────────────────···');
   const t = chalk.bold.blue('╰────────────────────────────···');
   const v = chalk.bold.blue('│');
@@ -248,15 +222,12 @@ export default async (client, m) => {
     }${t}`
   );
 
-  // Verificaciones de mensajes antiguos/duplicados
   if (
     m.id.startsWith('3EB0') ||
     (m.id.startsWith('BAE5') && m.id.length === 16) ||
     (m.id.startsWith('B24E') && m.id.length === 20)
-  ) {
-    writeDebugLog('ID de mensaje ignorado (posible duplicado)');
+  )
     return;
-  }
 
   const isOwners = [
     botJid,
@@ -264,10 +235,7 @@ export default async (client, m) => {
     ...global.owner.map((num) => num + '@s.whatsapp.net'),
   ].includes(sender);
 
-  if (!isOwners && settings.self) {
-    writeDebugLog('Bot en modo self y no es owner');
-    return;
-  }
+  if (!isOwners && settings.self) return;
 
   if (m.chat && !m.chat.endsWith('g.us')) {
     const allowedInPrivateForUsers = [
@@ -292,10 +260,7 @@ export default async (client, m) => {
       'code',
       'qr',
     ];
-    if (!isOwners && !allowedInPrivateForUsers.includes(command)) {
-      writeDebugLog('Comando no permitido en chat privado');
-      return;
-    }
+    if (!isOwners && !allowedInPrivateForUsers.includes(command)) return;
   }
 
   if (
@@ -306,7 +271,6 @@ export default async (client, m) => {
     await m.reply(
       `ꕥ El bot *${settings.botname}* está desactivado en este grupo.\n\n> ✎ Un *administrador* puede activarlo con el comando:\n> » *${usedPrefix}bot on*`
     );
-    writeDebugLog('Grupo baneado');
     return;
   }
 
@@ -325,10 +289,7 @@ export default async (client, m) => {
   if (!userrs.stats[today]) userrs.stats[today] = { msgs: 0, cmds: 0 };
   userrs.stats[today].msgs++;
 
-  if (chat.adminonly && !isAdmins) {
-    writeDebugLog('Grupo en modo adminonly y usuario no es admin');
-    return;
-  }
+  if (chat.adminonly && !isAdmins) return;
 
   if (!command) return;
 
@@ -341,6 +302,23 @@ export default async (client, m) => {
     );
   }
 
+  // ========== DEPURACIÓN POR WHATSAPP ==========
+  if (m.isGroup && cmdData && cmdData.isAdmin) {
+    const ownerJid = global.owner[0] + '@s.whatsapp.net'; // primer owner
+    const debugMsg = `🔍 DEBUG ADMIN (${command})\n` +
+      `Sender: ${sender}\n` +
+      `BotJid: ${botJid}\n` +
+      `Admins raw: ${JSON.stringify(groupAdmins)}\n` +
+      `isAdmins: ${isAdmins}\n` +
+      `isBotAdmins: ${isBotAdmins}\n` +
+      `Metadata obtenida: ${groupMetadata ? 'sí' : 'no'}\n` +
+      `Participantes: ${participants.length}\n` +
+      `Chat: ${m.chat}\n` +
+      `Grupo: ${groupName}`;
+    await client.sendMessage(ownerJid, { text: debugMsg }).catch(e => console.log('Error enviando debug:', e));
+  }
+  // =============================================
+
   if (
     cmdData.isOwner &&
     !global.owner.map((num) => num + '@s.whatsapp.net').includes(sender)
@@ -351,14 +329,10 @@ export default async (client, m) => {
     );
   }
 
-  if (cmdData.isAdmin && !isAdmins) {
-    writeDebugLog('Comando requiere admin, usuario no lo es');
+  if (cmdData.isAdmin && !isAdmins)
     return client.reply(m.chat, global.mess.admin, m);
-  }
-  if (cmdData.botAdmin && !isBotAdmins) {
-    writeDebugLog('Comando requiere botAdmin, bot no lo es');
+  if (cmdData.botAdmin && !isBotAdmins)
     return client.reply(m.chat, global.mess.botAdmin, m);
-  }
 
   try {
     await client.readMessages([m.key]);
@@ -370,9 +344,7 @@ export default async (client, m) => {
     user.name = m.pushName;
     users.stats[today].cmds++;
     await cmdData.run(client, m, args, usedPrefix, command, text);
-    writeDebugLog(`Comando ejecutado con éxito: ${command}`);
   } catch (error) {
-    writeDebugLog(`Error al ejecutar comando: ${error.message}`);
     await client.sendMessage(
       m.chat,
       { text: `《✧》 Error al ejecutar el comando\n${error}` },
