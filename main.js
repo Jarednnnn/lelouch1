@@ -64,39 +64,36 @@ export default async (client, m) => {
     }) : typeof pluginPrefix === 'string' ? [[new RegExp(strRegex(pluginPrefix)).exec(m.text || ''), new RegExp(strRegex(pluginPrefix))]] : [[null, null]]
     let match = matchs.find(p => p[0])
 
-    // --- DETECCIÓN DE ADMINS (VERSIÓN INFALIBLE) ---
-    let groupMetadata = m.isGroup ? await client.groupMetadata(m.chat).catch(() => null) : null
+    // ---------------------------------------------------------
+    // ⭐ SECCIÓN CORREGIDA: DETECCIÓN DE ADMINS
+    // ---------------------------------------------------------
+    let groupMetadata = null
+    let groupAdmins = []
+    let groupName = ''
     let isBotAdmins = false
     let isAdmins = false
-    let groupAdmins = []
 
-    if (m.isGroup && groupMetadata) {
-        const participants = groupMetadata.participants || []
-        // Extraemos solo el número puro (quitamos @s.whatsapp.net y :1)
-        const parse = (id) => id.split('@')[0].split(':')[0]
+    if (m.isGroup) {
+        groupMetadata = await client.groupMetadata(m.chat).catch(() => null)
+        groupName = groupMetadata?.subject || ''
         
-        const senderNum = parse(m.sender)
-        const botNum = parse(botJid)
+        // Función para limpiar JIDs de literales de dispositivo (:1, :2...)
+        const cleanJid = (id) => id ? id.split('@')[0].split(':')[0] + '@s.whatsapp.net' : ''
         
-        // Filtramos admins: si p.admin no es null, es admin o creador
-        groupAdmins = participants.filter(p => p.admin !== null).map(p => parse(p.id))
+        const senderClean = cleanJid(m.sender)
+        const botClean = cleanJid(botJid)
         
-        isBotAdmins = groupAdmins.includes(botNum)
-        isAdmins = groupAdmins.includes(senderNum)
+        // Obtenemos la lista de participantes que son admins
+        const adminsList = groupMetadata?.participants.filter(p => (p.admin === 'admin' || p.admin === 'superadmin')) || []
+        
+        // Verificamos si el bot o el usuario están en esa lista usando JIDs limpios
+        isBotAdmins = adminsList.some(p => cleanJid(p.id) === botClean)
+        isAdmins = adminsList.some(p => cleanJid(p.id) === senderClean)
     }
+    // ---------------------------------------------------------
 
     const isOwners = [botJid, ...(settings.owner ? [settings.owner] : []), ...global.owner.map(num => num + '@s.whatsapp.net')]
         .some(id => id.split('@')[0].split(':')[0] === m.sender.split('@')[0].split(':')[0])
-
-    // --- PLUGINS BEFORE ---
-    for (const name in global.plugins) {
-        const plugin = global.plugins[name]
-        if (plugin && !plugin.disabled && typeof plugin.before === "function") {
-            try {
-                if (await plugin.before.call(client, m, { client, isAdmins, isBotAdmins, isOwners })) continue
-            } catch (err) { console.error(err) }
-        }
-    }
 
     if (!match) return
     let usedPrefix = (match[0] || [])[0] || ''
@@ -105,7 +102,6 @@ export default async (client, m) => {
     let text = args.join(' ')
 
     const pushname = m.pushName || 'Sin nombre'
-    const from = m.chat
     const chatData = global.db.data.chats[from] || {}
 
     // --- CONSOLA LOG ---
@@ -113,31 +109,27 @@ export default async (client, m) => {
         const h = chalk.bold.blue('╭────────────────────────────···')
         const t = chalk.bold.blue('╰────────────────────────────···')
         const v = chalk.bold.blue('│')
-        console.log(`\n${h}\n${chalk.bold.yellow(`${v} Fecha: ${chalk.whiteBright(moment().format('DD/MM/YY HH:mm:ss'))}`)}\n${chalk.bold.blueBright(`${v} Usuario: ${chalk.whiteBright(pushname)}`)}\n${chalk.bold.magentaBright(`${v} Comando: ${command}`)}\n${m.isGroup ? chalk.bold.cyanBright(`${v} Grupo: ${chalk.greenBright(groupMetadata?.subject)}\n`) : chalk.bold.greenBright(`${v} Chat privado\n`)}${t}`)
+        console.log(`\n${h}\n${chalk.bold.yellow(`${v} Fecha: ${chalk.whiteBright(moment().format('DD/MM/YY HH:mm:ss'))}`)}\n${chalk.bold.blueBright(`${v} Usuario: ${chalk.whiteBright(pushname)}`)}\n${chalk.bold.magentaBright(`${v} Comando: ${command}`)}\n${m.isGroup ? chalk.bold.cyanBright(`${v} Grupo: ${chalk.greenBright(groupName)}\n`) : chalk.bold.greenBright(`${v} Chat privado\n`)}${t}`)
     }
 
-    // --- VALIDACIONES DE COMANDOS ---
     if (chat?.isBanned && !isOwners) return
     if (chat.adminonly && !isAdmins) return
     
     const cmdData = global.comandos.get(command)
     if (!cmdData) return
 
-    // Literales de error para feedback al usuario
+    // Validaciones de permisos
     if (cmdData.isOwner && !isOwners) return
-    if (cmdData.isAdmin && !isAdmins) return m.reply(`《✧》 Este comando solo puede ser ejecutado por los Administradores del Grupo.`)
-    if (cmdData.botAdmin && !isBotAdmins) return m.reply(`《✧》 Necesito ser Administrador para ejecutar esto.`)
+    if (cmdData.isAdmin && !isAdmins) return client.sendMessage(m.chat, { text: `《✧》 Este comando solo puede ser ejecutado por los Administradores del Grupo.` }, { quoted: m })
+    if (cmdData.botAdmin && !isBotAdmins) return client.sendMessage(m.chat, { text: `《✧》 Necesito ser Administrador para ejecutar esto.` }, { quoted: m })
 
     try {
         await client.readMessages([m.key])
-        const today = new Date().toISOString().split('T')[0]
         user.usedcommands = (user.usedcommands || 0) + 1
-        
-        // Ejecución del comando pasando todas las variables útiles
         await cmdData.run(client, m, args, usedPrefix, command, text, { isAdmins, isBotAdmins, isOwners, groupMetadata })
     } catch (error) {
         console.error(error)
-        await client.sendMessage(m.chat, { text: `《✧》 Error al ejecutar el comando\n${error.message}` }, { quoted: m })
+        await client.sendMessage(m.chat, { text: `《✧》 Error: ${error.message}` }, { quoted: m })
     }
     level(m)
 }
