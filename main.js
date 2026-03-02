@@ -4,6 +4,7 @@ import chalk from 'chalk';
 import fs from 'fs';
 import path from 'path';
 import gradient from 'gradient-string';
+import { areJidsSameUser } from '@whiskeysockets/baileys';
 import seeCommands from './lib/system/commandLoader.js';
 import initDB from './lib/system/initDB.js';
 import antilink from './commands/antilink.js';
@@ -15,7 +16,9 @@ seeCommands();
 export default async (client, m) => {
   if (!m.message) return;
 
-  const sender = client.decodeJid(m.sender || '');
+  // === IMPORTANTE: m.sender ya viene procesado desde smsg() con fixLid,
+  // así que NO debemos volver a decodificarlo. ===
+  const sender = m.sender || '';
   let body =
     m.message.conversation ||
     m.message.extendedTextMessage?.text ||
@@ -109,7 +112,7 @@ export default async (client, m) => {
           continue;
         }
       } catch (err) {
-        console.error(`Error en plugin.all -> ${name}`, err);
+        console.error(`Error en plugin.before -> ${name}`, err);
       }
     }
   }
@@ -121,32 +124,57 @@ export default async (client, m) => {
   let text = args.join(' ');
 
   const pushname = m.pushName || 'Sin nombre';
+
+  // ========== BLOQUE DE DETECCIÓN DE ADMINISTRADORES (CORREGIDO) ==========
+  // Normalizador de JIDs: extrae solo el número base sin sufijos ni dominios
+  const normalizeJid = (jid = '') => {
+    if (!jid) return '';
+    return jid
+      .replace(/@s\.whatsapp\.net|@c\.us|@lid|@g\.us/g, '')
+      .replace(/:\d+$/, '')
+      .trim();
+  };
+
   let groupMetadata = null;
   let participants = [];
   let groupAdmins = [];
   let groupName = '';
 
-  // --- INICIO DE LA CORRECCIÓN: DETECCIÓN DE ADMINISTRADORES ---
   if (m.isGroup) {
     try {
       groupMetadata = await client.groupMetadata(m.chat);
       groupName = groupMetadata?.subject || '';
       participants = groupMetadata?.participants || [];
-      // Obtener admins en bruto y luego decodificar cada JID
-      const adminsRaw = getGroupAdmins(participants.map(p => ({ id: p.id || p.jid, admin: p.admin }))) || [];
-      groupAdmins = adminsRaw.map(id => client.decodeJid(id));
+
+      // Construir lista de admins normalizados
+      groupAdmins = participants
+        .filter(p => p.admin === 'admin' || p.admin === 'superadmin')
+        .map(p => normalizeJid(p.id || p.jid || ''));
+
+      // DEBUG (opcional, puedes borrarlo después)
+      console.log('[ADMIN DEBUG]', {
+        chat: m.chat,
+        adminsNorm: groupAdmins,
+        sender,
+        senderNorm: normalizeJid(sender),
+        botNorm: normalizeJid(botJid)
+      });
     } catch (err) {
       console.error('Error al obtener metadata del grupo:', err);
     }
   }
 
-  const decodedSender = client.decodeJid(sender);
-  const isAdmins = m.isGroup ? groupAdmins.includes(decodedSender) : false;
-  const isBotAdmins = m.isGroup ? groupAdmins.includes(botJid) : false;
-  // --- FIN DE LA CORRECCIÓN ---
+  const senderNorm = normalizeJid(sender);
+  const botNorm = normalizeJid(botJid);
+
+  const isAdmins = m.isGroup ? groupAdmins.includes(senderNorm) : false;
+  const isBotAdmins = m.isGroup ? groupAdmins.includes(botNorm) : false;
+  // ========== FIN DEL BLOQUE DE ADMIN ==========
 
   const chatData = global.db.data.chats[from];
   const consolePrimary = chatData?.primaryBot;
+
+  // Solo ejecuta si este es el bot primario (o no hay primario)
   if (!consolePrimary || consolePrimary === botJid) {
     const h = chalk.bold.blue('╭────────────────────────────···');
     const t = chalk.bold.blue('╰────────────────────────────···');
@@ -207,26 +235,27 @@ export default async (client, m) => {
       return bots;
     }
 
+    // ========== CORRECCIÓN DE LA LÓGICA DE primaryBot ==========
     const botprimaryId = chat?.primaryBot;
     if (botprimaryId && botprimaryId !== botJid) {
       if (hasPrefix) {
-        const participants = m.isGroup
-          ? (await client.groupMetadata(m.chat).catch(() => ({ participants: [] })))
-              .participants
+        const groupParticipants = m.isGroup
+          ? (await client.groupMetadata(m.chat).catch(() => ({ participants: [] }))).participants
           : [];
-        const primaryInGroup = participants.some(
-          (p) => (p.phoneNumber || p.id) === botprimaryId
+
+        const primaryInGroup = groupParticipants.some(
+          (p) => (p.id || p.jid) === botprimaryId
         );
-        const isPrimarySelf = botprimaryId === botJid;
         const primaryInSessions = getAllSessionBots().includes(botprimaryId);
-        if (!primaryInSessions || !primaryInGroup) {
-          return;
+
+        // Solo ceder el paso si el bot primario está activo Y en el grupo
+        if (primaryInSessions && primaryInGroup) {
+          return; // Este bot cede el paso al primario
         }
-        if ((primaryInSessions && primaryInGroup) || isPrimarySelf) {
-          return;
-        }
+        // Si el primario NO está disponible, este bot continúa normalmente
       }
     }
+    // ========== FIN DE LA CORRECCIÓN ==========
 
     if (
       m.id.startsWith('3EB0') ||
@@ -234,12 +263,14 @@ export default async (client, m) => {
       (m.id.startsWith('B24E') && m.id.length === 20)
     )
       return;
+
     const isOwners = [
       botJid,
       ...(settings.owner ? [settings.owner] : []),
       ...global.owner.map((num) => num + '@s.whatsapp.net'),
     ].includes(sender);
     if (!isOwners && settings.self) return;
+
     if (m.chat && !m.chat.endsWith('g.us')) {
       const allowedInPrivateForUsers = [
         'report',
@@ -265,6 +296,7 @@ export default async (client, m) => {
       ];
       if (!isOwners && !allowedInPrivateForUsers.includes(command)) return;
     }
+
     if (
       chat?.isBanned &&
       !(command === 'bot' && text === 'on') &&
@@ -293,6 +325,7 @@ export default async (client, m) => {
 
     if (chat.adminonly && !isAdmins) return;
     if (!command) return;
+
     const cmdData = global.comandos.get(command);
     if (!cmdData) {
       if (settings.prefix === true) return;
@@ -301,7 +334,7 @@ export default async (client, m) => {
         `ꕤ El comando *${command}* no existe.\n✎ Usa *${usedPrefix}help* para ver la lista de comandos disponibles.`
       );
     }
-    const comando = m.text.slice(usedPrefix.length);
+
     if (
       cmdData.isOwner &&
       !global.owner.map((num) => num + '@s.whatsapp.net').includes(sender)
@@ -311,10 +344,12 @@ export default async (client, m) => {
         `ꕤ El comando *${command}* no existe.\n✎ Usa *${usedPrefix}help* para ver la lista de comandos disponibles.`
       );
     }
+
     if (cmdData.isAdmin && !isAdmins)
       return client.reply(m.chat, global.mess.admin, m);
     if (cmdData.botAdmin && !isBotAdmins)
       return client.reply(m.chat, global.mess.botAdmin, m);
+
     try {
       await client.readMessages([m.key]);
       user.usedcommands = (user.usedcommands || 0) + 1;
