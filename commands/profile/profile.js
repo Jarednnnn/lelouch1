@@ -52,7 +52,7 @@ export default {
     const value = (globalRec && typeof globalRec.value === 'number') ? globalRec.value : (local && typeof local.value === 'number') ? local.value : 0
     return acc + value
     }, 0)
-   const perfil = (await client.profilePictureUrl(userId, 'image').catch(() => null)) || 'https://cdn.yuki-wabot.my.id/files/2PVh.jpeg';
+    const perfil = await client.profilePictureUrl(userId, 'image').catch((_) => 'https://cdn.yuki-wabot.my.id/files/2PVh.jpeg')
     const users = Object.entries(globalUsers).map(([key, value]) => ({ ...value, jid: key }))
     const sortedLevel = users.sort((a, b) => (b.level || 0) - (a.level || 0))
     try {
