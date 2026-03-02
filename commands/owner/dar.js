@@ -61,7 +61,7 @@ export default {
                 return client.reply(m.chat, formatMessage(`❀ No se encontró ningún personaje con el identificador: *${identifier}*.`), m);
             }
 
-            const charId = String(character.id); // Asegurar string
+            const charId = String(character.id);
             const charName = character.name;
 
             // ========== PREPARAR ESTRUCTURAS ==========
@@ -96,10 +96,32 @@ export default {
                 global.db.data.chats[m.chat].users[targetId].characters = [];
             }
 
-            // Verificar si ya lo tiene (opcional)
+            // Verificar si el destino ya lo tiene
             if (global.db.data.chats[m.chat].users[targetId].characters.includes(charId)) {
                 await m.react('✖️');
                 return client.reply(m.chat, formatMessage(`❀ El usuario ya tiene el personaje *${charName}* (ID: ${charId}).`), m);
+            }
+
+            // Verificar si el personaje ya está asignado a alguien
+            const currentOwner = global.db.data.chats[m.chat].characters[charId].user;
+            if (currentOwner) {
+                // Remover el personaje del antiguo dueño
+                if (global.db.data.chats[m.chat].users[currentOwner]) {
+                    global.db.data.chats[m.chat].users[currentOwner].characters = 
+                        global.db.data.chats[m.chat].users[currentOwner].characters.filter(id => id !== charId);
+                }
+                // También remover de global.db.data.users si existe
+                if (global.db.data.users[currentOwner] && Array.isArray(global.db.data.users[currentOwner].characters)) {
+                    global.db.data.users[currentOwner].characters = 
+                        global.db.data.users[currentOwner].characters.filter(id => id !== charId);
+                }
+                // Si el antiguo dueño tenía este personaje como favorito, quitar favorito
+                if (global.db.data.chats[m.chat].users[currentOwner]?.favorite === charId) {
+                    delete global.db.data.chats[m.chat].users[currentOwner].favorite;
+                }
+                if (global.db.data.users[currentOwner]?.favorite === charId) {
+                    delete global.db.data.users[currentOwner].favorite;
+                }
             }
 
             // Añadir el ID al array del usuario destino
@@ -109,7 +131,7 @@ export default {
             global.db.data.chats[m.chat].characters[charId].user = targetId;
             global.db.data.chats[m.chat].characters[charId].claimedAt = Date.now();
 
-            // ========== TAMBIÉN GUARDAR EN users GLOBAL (por si acaso) ==========
+            // ========== TAMBIÉN GUARDAR EN users GLOBAL ==========
             if (!global.db.data.users[targetId]) {
                 global.db.data.users[targetId] = {
                     name: null,
@@ -137,7 +159,13 @@ export default {
             global.saveDatabase();
 
             await m.react('✔️');
-            client.reply(m.chat, formatMessage(`❀ Personaje *${charName}* (ID: ${charId}) ha sido dado a @${targetId.split('@')[0]}.`), m, { mentions: [targetId] });
+
+            // Mensaje con información de transferencia
+            let replyMsg = `❀ Personaje *${charName}* (ID: ${charId}) ha sido dado a @${targetId.split('@')[0]}.`;
+            if (currentOwner && currentOwner !== targetId) {
+                replyMsg += `\n❀ Se lo quitaste a @${currentOwner.split('@')[0]}.`;
+            }
+            client.reply(m.chat, formatMessage(replyMsg), m, { mentions: [targetId, currentOwner].filter(Boolean) });
 
         } catch (error) {
             console.error(error);
