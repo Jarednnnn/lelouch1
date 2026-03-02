@@ -4,29 +4,13 @@ import { promises as fs } from 'fs'
 
 const charactersFilePath = './lib/characters.json'
 
-// Función para cargar catálogo (similar a robwaifu)
 async function loadCharacters() {
-    try {
-        const data = await fs.readFile(charactersFilePath, 'utf-8')
-        return JSON.parse(data)
-    } catch (e) {
-        console.error('Error loading characters:', e)
-        return {}
-    }
+    const data = await fs.readFile(charactersFilePath, 'utf-8')
+    return JSON.parse(data)
 }
 
-// Aplanar la estructura para búsqueda rápida por ID (opcional, pero útil)
 function flattenCharacters(structure) {
-    let flat = {}
-    for (const serieId in structure) {
-        const serie = structure[serieId]
-        if (serie.characters && Array.isArray(serie.characters)) {
-            serie.characters.forEach(ch => {
-                flat[ch.id] = ch
-            })
-        }
-    }
-    return flat
+    return Object.values(structure).flatMap(s => Array.isArray(s.characters) ? s.characters : [])
 }
 
 const formatMessage = (text) => `《✧》 ${text}`;
@@ -36,7 +20,7 @@ export default {
     isOwner: true,
     run: async (client, m, args, usedPrefix, command) => {
         try {
-            // Obtener usuario destino
+            // Obtener usuario destino (mención o cita)
             const mentioned = m.mentionedJid;
             const who2 = mentioned.length > 0 ? mentioned[0] : (m.quoted ? m.quoted.sender : null);
             if (!who2) {
@@ -52,27 +36,29 @@ export default {
 
             await m.react('🕒');
 
-            // Cargar catálogo de personajes (si no está ya en memoria global)
-            if (!global.allCharacters) {
-                const raw = await loadCharacters()
-                global.allCharacters = flattenCharacters(raw)
-                // También podrías guardar en global.db.data.characters si quieres persistencia
-                // global.db.data.characters = global.allCharacters
+            // Cargar catálogo de personajes
+            let catalog;
+            try {
+                catalog = await loadCharacters();
+            } catch (e) {
+                console.error('Error al cargar characters.json:', e);
+                return client.reply(m.chat, formatMessage('❀ Error al cargar el catálogo de personajes.'), m);
             }
 
-            // Verificar que el ID exista
-            const characterInfo = global.allCharacters[characterId]
-            if (!characterInfo) {
+            // Aplanar para buscar por ID
+            const allCharacters = flattenCharacters(catalog);
+            const character = allCharacters.find(ch => ch.id == characterId); // comparación flexible
+
+            if (!character) {
                 await m.react('✖️');
                 return client.reply(m.chat, formatMessage(`❀ No se encontró ningún personaje con ID *${characterId}*.`), m);
             }
 
-            // Asegurar estructura del chat
-            if (!global.db.data.chats[m.chat]) global.db.data.chats[m.chat] = { users: {} }
-            const chat = global.db.data.chats[m.chat]
-            if (!chat.users) chat.users = {}
-            if (!chat.users[who]) {
-                chat.users[who] = {
+            // ========== GUARDAR EN EL CHAT ACTUAL ==========
+            if (!global.db.data.chats[m.chat]) global.db.data.chats[m.chat] = { users: {} };
+            if (!global.db.data.chats[m.chat].users) global.db.data.chats[m.chat].users = {};
+            if (!global.db.data.chats[m.chat].users[who]) {
+                global.db.data.chats[m.chat].users[who] = {
                     stats: {},
                     usedTime: null,
                     lastCmd: 0,
@@ -81,27 +67,22 @@ export default {
                     afk: -1,
                     afkReason: "",
                     characters: []
-                }
+                };
             }
-            const userData = chat.users[who]
-            if (!Array.isArray(userData.characters)) userData.characters = []
+            if (!global.db.data.chats[m.chat].users[who].characters) {
+                global.db.data.chats[m.chat].users[who].characters = [];
+            }
 
             // Evitar duplicados
-            if (userData.characters.includes(characterId)) {
+            if (global.db.data.chats[m.chat].users[who].characters.includes(characterId)) {
                 await m.react('✖️');
-                return client.reply(m.chat, formatMessage(`❀ El usuario ya tiene el personaje *${characterInfo.name}* (ID: ${characterId}).`), m);
+                return client.reply(m.chat, formatMessage(`❀ El usuario ya tiene el personaje *${character.name}* (ID: ${characterId}).`), m);
             }
 
-            // Añadir el ID al array del usuario en el chat
-            userData.characters.push(characterId)
+            // Añadir el ID al array del chat
+            global.db.data.chats[m.chat].users[who].characters.push(characterId);
 
-            // Opcional: guardar detalles del personaje en chat.characters para referencia (como en robwaifu)
-            if (!chat.characters) chat.characters = {}
-            if (!chat.characters[characterId]) {
-                chat.characters[characterId] = characterInfo
-            }
-
-            // También añadir a users global por si acaso
+            // ========== TAMBIÉN GUARDAR EN users GLOBAL (por compatibilidad) ==========
             if (!global.db.data.users[who]) {
                 global.db.data.users[who] = {
                     name: null,
@@ -116,25 +97,25 @@ export default {
                     metadatos: null,
                     metadatos2: null,
                     characters: []
-                }
+                };
             }
             if (!global.db.data.users[who].characters) {
-                global.db.data.users[who].characters = []
+                global.db.data.users[who].characters = [];
             }
             if (!global.db.data.users[who].characters.includes(characterId)) {
-                global.db.data.users[who].characters.push(characterId)
+                global.db.data.users[who].characters.push(characterId);
             }
 
             // Guardar cambios
-            global.saveDatabase()
+            global.saveDatabase();
 
-            await m.react('✔️')
-            client.reply(m.chat, formatMessage(`❀ Personaje *${characterInfo.name}* (ID: ${characterId}) añadido a @${who.split('@')[0]}.`), m, { mentions: [who] })
+            await m.react('✔️');
+            client.reply(m.chat, formatMessage(`❀ Personaje *${character.name}* (ID: ${characterId}) añadido a @${who.split('@')[0]}.`), m, { mentions: [who] });
 
         } catch (error) {
-            console.error(error)
-            await m.react('✖️')
-            client.reply(m.chat, `⚠︎ Se ha producido un problema.\n${error.message}`, m)
+            console.error(error);
+            await m.react('✖️');
+            client.reply(m.chat, `⚠︎ Se ha producido un problema.\n${error.message}`, m);
         }
     }
 }
