@@ -1,4 +1,4 @@
-// plugins/owner-transfer.js
+// plugins/owner-transfer.js (versión con eliminación)
 import { resolveLidToRealJid } from "../../lib/utils.js"
 
 const formatMessage = (text) => `《✧》 ${text}`;
@@ -11,21 +11,25 @@ const normalizeNumber = (num) => {
     return cleaned;
 };
 
-// Función para reemplazar todas las ocurrencias de un ID por otro en todo el objeto (copiando)
-function deepReplaceId(obj, oldId, newId) {
+function deepReplaceId(obj, oldId, newId, skipSettings = true) {
     if (typeof obj === 'string') {
-        // Si es un string que coincide exactamente con el ID, lo reemplazamos
         return obj === oldId ? newId : obj;
     }
     if (Array.isArray(obj)) {
-        return obj.map(item => deepReplaceId(item, oldId, newId));
+        return obj.map(item => deepReplaceId(item, oldId, newId, skipSettings));
     }
     if (obj && typeof obj === 'object') {
+        if (skipSettings && obj === global.db.data.settings) {
+            return obj;
+        }
         const newObj = {};
         for (const [key, value] of Object.entries(obj)) {
-            // Reemplazar también en las claves si son IDs
-            const newKey = deepReplaceId(key, oldId, newId);
-            newObj[newKey] = deepReplaceId(value, oldId, newId);
+            const newKey = deepReplaceId(key, oldId, newId, skipSettings);
+            if (skipSettings && value === global.db.data.settings) {
+                newObj[newKey] = value;
+            } else {
+                newObj[newKey] = deepReplaceId(value, oldId, newId, skipSettings);
+            }
         }
         return newObj;
     }
@@ -52,67 +56,66 @@ export default {
 
             global.loadDatabase();
 
-            // Verificar que el origen exista en users global (aunque podría no tener, pero para evitar errores)
-            if (!global.db.data.users[origen]) {
+            // Guardar settings original
+            const originalSettings = JSON.parse(JSON.stringify(global.db.data.settings));
+
+            // Verificar que el origen exista (en users o en algún chat)
+            const existeEnUsers = !!global.db.data.users[origen];
+            let existeEnAlgunChat = false;
+            for (const chatId in global.db.data.chats) {
+                if (global.db.data.chats[chatId].users?.[origen]) {
+                    existeEnAlgunChat = true;
+                    break;
+                }
+            }
+            if (!existeEnUsers && !existeEnAlgunChat) {
                 await m.react('✖️');
                 return client.reply(m.chat, formatMessage(`El usuario ${origen} no existe en la base de datos.`), m);
             }
 
-            // Crear destino en users global si no existe
-            if (!global.db.data.users[destino]) {
-                global.db.data.users[destino] = {
-                    name: null,
-                    exp: 0,
-                    level: 0,
-                    usedcommands: 0,
-                    pasatiempo: "",
-                    description: "",
-                    marry: "",
-                    genre: "",
-                    birth: "",
-                    metadatos: null,
-                    metadatos2: null
-                };
+            // Preparar datos del origen (copia profunda)
+            const origenData = {
+                users: global.db.data.users[origen] ? JSON.parse(JSON.stringify(global.db.data.users[origen])) : null,
+                chats: {}
+            };
+            // Copiar datos de chats donde aparece el origen
+            for (const chatId in global.db.data.chats) {
+                if (global.db.data.chats[chatId].users?.[origen]) {
+                    origenData.chats[chatId] = JSON.parse(JSON.stringify(global.db.data.chats[chatId].users[origen]));
+                }
             }
 
-            // 1. Transferir datos globales de users (copia profunda)
-            const origenUser = JSON.parse(JSON.stringify(global.db.data.users[origen]));
-            global.db.data.users[destino] = origenUser;
-            // Resetear origen
-            global.db.data.users[origen] = {
-                name: null,
-                exp: 0,
-                level: 0,
-                usedcommands: 0,
-                pasatiempo: "",
-                description: "",
-                marry: "",
-                genre: "",
-                birth: "",
-                metadatos: null,
-                metadatos2: null
-            };
+            // Crear destino en users si no existe y si origen tenía users
+            if (origenData.users) {
+                if (!global.db.data.users[destino]) {
+                    global.db.data.users[destino] = {
+                        name: null,
+                        exp: 0,
+                        level: 0,
+                        usedcommands: 0,
+                        pasatiempo: "",
+                        description: "",
+                        marry: "",
+                        genre: "",
+                        birth: "",
+                        metadatos: null,
+                        metadatos2: null
+                    };
+                }
+                // Transferir datos globales de users
+                global.db.data.users[destino] = origenData.users;
+            }
 
-            // 2. Transferir datos de chats (copia profunda)
-            for (const chatId in global.db.data.chats) {
-                const chat = global.db.data.chats[chatId];
-                if (!chat.users || typeof chat.users !== 'object') continue;
-
-                if (chat.users[origen]) {
-                    if (!chat.users[destino]) {
-                        chat.users[destino] = {
-                            stats: {},
-                            usedTime: null,
-                            lastCmd: 0,
-                            coins: 0,
-                            bank: 0,
-                            afk: -1,
-                            afkReason: "",
-                            characters: []
-                        };
-                    }
-                    chat.users[destino] = JSON.parse(JSON.stringify(chat.users[origen]));
-                    chat.users[origen] = {
+            // Transferir datos de chats
+            for (const chatId in origenData.chats) {
+                if (!global.db.data.chats[chatId]) {
+                    global.db.data.chats[chatId] = { users: {} };
+                }
+                if (!global.db.data.chats[chatId].users) {
+                    global.db.data.chats[chatId].users = {};
+                }
+                if (!global.db.data.chats[chatId].users[destino]) {
+                    global.db.data.chats[chatId].users[destino] = {
                         stats: {},
                         usedTime: null,
                         lastCmd: 0,
@@ -123,21 +126,34 @@ export default {
                         characters: []
                     };
                 }
+                global.db.data.chats[chatId].users[destino] = origenData.chats[chatId];
             }
 
-            // 3. AHORA: Reemplazar TODAS las ocurrencias del ID origen por el ID destino en TODA la base de datos
-            // Esto incluye personajes en global.db.data.characters, referencias en 'marry', etc.
-            global.db.data = deepReplaceId(global.db.data, origen, destino);
+            // --- ELIMINAR COMPLETAMENTE AL ORIGEN ---
+            // Eliminar de users global
+            delete global.db.data.users[origen];
+            // Eliminar de todos los chats
+            for (const chatId in global.db.data.chats) {
+                if (global.db.data.chats[chatId].users?.[origen]) {
+                    delete global.db.data.chats[chatId].users[origen];
+                }
+            }
+
+            // Reemplazar referencias (marry, personajes, etc.) en TODA la base, excepto settings
+            global.db.data = deepReplaceId(global.db.data, origen, destino, true);
+
+            // Restaurar settings
+            global.db.data.settings = originalSettings;
 
             // Guardar cambios
             global.saveDatabase();
 
             await m.react('✔️');
-            client.reply(m.chat, formatMessage(`Progreso transferido exitosamente de ${origen} a ${destino}.`), m);
+            client.reply(m.chat, formatMessage(`Progreso transferido exitosamente de ${origen} a ${destino}. El usuario origen ha sido eliminado de la base de datos.`), m);
         } catch (error) {
             console.error(error);
             await m.react('✖️');
             client.reply(m.chat, `⚠︎ Se ha producido un problema.\n${error.message}`, m);
         }
     }
-};
+}
