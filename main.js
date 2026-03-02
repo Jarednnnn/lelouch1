@@ -15,6 +15,7 @@ seeCommands()
 export default async (client, m) => {
 if (!m.message) return
 const sender = (m.sender || '').replace('@lid', '@s.whatsapp.net').split(':')[0] + '@s.whatsapp.net'
+await client.sendMessage(m.chat, { text: `isGroup: ${m.isGroup}\nchat: ${m.chat}\nsender: ${sender}` }, { quoted: m })
 let body = m.message.conversation || m.message.extendedTextMessage?.text || m.message.imageMessage?.caption || m.message.videoMessage?.caption || m.message.buttonsResponseMessage?.selectedButtonId || m.message.listResponseMessage?.singleSelectReply?.selectedRowId || m.message.templateButtonReplyMessage?.selectedId || ''
 
 initDB(m, client)
