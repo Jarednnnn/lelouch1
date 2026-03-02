@@ -10,10 +10,10 @@ import initDB from './lib/system/initDB.js';
 import antilink from './commands/antilink.js';
 import level from './commands/level.js';
 import { getGroupAdmins } from './lib/message.js';
+import { resolveLidToRealJid } from './lib/utils.js'; // <-- AÑADIR
 
 seeCommands();
 
-// Función para obtener todos los bots en sesión
 function getAllSessionBots(client) {
   const sessionDirs = ['./Sessions/Subs'];
   let bots = [];
@@ -42,36 +42,11 @@ export default async (client, m) => {
   if (!m.message) return;
 
   const sender = m.sender || '';
-  let body =
-    m.message.conversation ||
-    m.message.extendedTextMessage?.text ||
-    m.message.imageMessage?.caption ||
-    m.message.videoMessage?.caption ||
-    m.message.buttonsResponseMessage?.selectedButtonId ||
-    m.message.listResponseMessage?.singleSelectReply?.selectedRowId ||
-    m.message.templateButtonReplyMessage?.selectedId ||
-    '';
-
-  initDB(m, client);
-  antilink(client, m);
-
-  for (const name in global.plugins) {
-    const plugin = global.plugins[name];
-    if (plugin && typeof plugin.all === 'function') {
-      try {
-        await plugin.all.call(client, m, { client });
-      } catch (err) {
-        console.error(`Error en plugin.all -> ${name}`, err);
-      }
-    }
-  }
-
-  const from = m.key.remoteJid;
   const botJid = client.decodeJid(client.user.id);
   const chat = global.db.data.chats[m.chat] || {};
   const settings = global.db.data.settings[botJid] || {};
-  const user = global.db.data.users[sender] ||= {};
-  const users = chat.users[sender] || {};
+
+  // --- PROCESAR PREFIJOS Y COMANDO ---
   const rawBotname = settings.namebot || 'Yuki';
   const tipo = settings.type || 'Sub';
   const isValidBotname = /^[\w\s]+$/.test(rawBotname);
@@ -105,6 +80,7 @@ export default async (client, m) => {
   } else {
     prefix = new RegExp('^(' + prefixes.join('|') + ')?', 'i');
   }
+
   const strRegex = (str) => str.replace(/[|\\{}()[\]^$+*?.]/g, '\\$&');
   let pluginPrefix = client.prefix ? client.prefix : prefix;
   let matchs =
@@ -125,6 +101,100 @@ export default async (client, m) => {
       : [[null, null]];
   let match = matchs.find((p) => p[0]);
 
+  if (!match) return;
+  let usedPrefix = (match[0] || [])[0] || '';
+  let args = m.text.slice(usedPrefix.length).trim().split(' ');
+  let command = (args.shift() || '').toLowerCase();
+  let text = args.join(' ');
+
+  console.log(`📨 Comando detectado: ${command} de ${sender} en ${m.isGroup ? 'grupo' : 'privado'}`);
+
+  // --- OBTENER METADATA DEL GRUPO CON REINTENTO Y RESOLUCIÓN DE LIDS ---
+  let groupMetadata = null;
+  let participants = [];
+  let groupAdmins = [];
+  let groupName = '';
+  if (m.isGroup) {
+    let attempts = 0;
+    while (attempts < 2) {
+      try {
+        groupMetadata = await client.groupMetadata(m.chat);
+        break;
+      } catch (err) {
+        attempts++;
+        console.error(`Intento ${attempts} falló:`, err.message);
+        if (attempts === 2) {
+          console.error('Error definitivo al obtener metadata:', err);
+          groupMetadata = null;
+        }
+        await new Promise(resolve => setTimeout(resolve, 1000));
+      }
+    }
+    if (groupMetadata) {
+      groupName = groupMetadata.subject || '';
+      participants = groupMetadata.participants || [];
+      // Obtener admins (pueden ser LIDs)
+      const rawAdmins = participants
+        .filter(p => p.admin === 'admin' || p.admin === 'superadmin')
+        .map(p => p.id || p.jid || '')
+        .filter(Boolean);
+      
+      // Resolver LIDs a JIDs reales
+      groupAdmins = [];
+      for (const adminId of rawAdmins) {
+        if (adminId.endsWith('@lid')) {
+          try {
+            const realJid = await resolveLidToRealJid(adminId, client, m.chat);
+            if (realJid) groupAdmins.push(realJid);
+          } catch (e) {
+            console.error('Error resolviendo LID:', e);
+          }
+        } else {
+          groupAdmins.push(adminId);
+        }
+      }
+      console.log(`👥 Grupo: ${groupName}, participantes: ${participants.length}, admins: ${groupAdmins.length}`);
+    }
+  }
+
+  // --- DEPURACIÓN TEMPRANA PARA COMANDOS DE ADMIN ---
+  const cmdData = global.comandos.get(command);
+  if (cmdData && cmdData.isAdmin && m.isGroup) {
+    const ownerJid = global.owner[0] + '@s.whatsapp.net';
+    const debugMsg = `🔍 DEBUG ADMIN (${command})\n` +
+      `Sender: ${sender}\n` +
+      `BotJid: ${botJid}\n` +
+      `Admins raw (LIDs): ${JSON.stringify(participants.filter(p => p.admin).map(p => p.id))}\n` +
+      `Admins resueltos: ${JSON.stringify(groupAdmins)}\n` +
+      `isAdmins: ${groupAdmins.some(admin => areJidsSameUser(admin, sender))}\n` +
+      `isBotAdmins: ${groupAdmins.some(admin => areJidsSameUser(admin, botJid))}\n` +
+      `Metadata obtenida: ${groupMetadata ? 'sí' : 'no'}\n` +
+      `Participantes: ${participants.length}\n` +
+      `Chat: ${m.chat}\n` +
+      `Grupo: ${groupName}`;
+    await client.sendMessage(ownerJid, { text: debugMsg }).catch(e => console.log('Error enviando debug:', e));
+    console.log('📤 Debug enviado al owner');
+  }
+
+  // --- CONTINUAR CON EL RESTO DEL HANDLER (sin cambios) ---
+  initDB(m, client);
+  antilink(client, m);
+
+  for (const name in global.plugins) {
+    const plugin = global.plugins[name];
+    if (plugin && typeof plugin.all === 'function') {
+      try {
+        await plugin.all.call(client, m, { client });
+      } catch (err) {
+        console.error(`Error en plugin.all -> ${name}`, err);
+      }
+    }
+  }
+
+  const from = m.key.remoteJid;
+  const user = global.db.data.users[sender] ||= {};
+  const users = chat.users[sender] || {};
+
   for (const name in global.plugins) {
     const plugin = global.plugins[name];
     if (!plugin) continue;
@@ -140,41 +210,14 @@ export default async (client, m) => {
     }
   }
 
-  if (!match) return;
-  let usedPrefix = (match[0] || [])[0] || '';
-  let args = m.text.slice(usedPrefix.length).trim().split(' ');
-  let command = (args.shift() || '').toLowerCase();
-  let text = args.join(' ');
-
   const pushname = m.pushName || 'Sin nombre';
-  let groupMetadata = null;
-  let participants = [];
-  let groupAdmins = [];
-  let groupName = '';
-
-  // --- DETECCIÓN DE ADMINISTRADORES ---
-  if (m.isGroup) {
-    try {
-      groupMetadata = await client.groupMetadata(m.chat);
-      groupName = groupMetadata?.subject || '';
-      participants = groupMetadata?.participants || [];
-
-      groupAdmins = participants
-        .filter(p => p.admin === 'admin' || p.admin === 'superadmin')
-        .map(p => p.id || p.jid || '')
-        .filter(Boolean);
-    } catch (err) {
-      console.error('Error al obtener metadata del grupo:', err);
-    }
-  }
-
   const isAdmins = m.isGroup ? groupAdmins.some(admin => areJidsSameUser(admin, sender)) : false;
   const isBotAdmins = m.isGroup ? groupAdmins.some(admin => areJidsSameUser(admin, botJid)) : false;
 
   const chatData = global.db.data.chats[from];
   const consolePrimary = chatData?.primaryBot;
 
-  // --- LÓGICA DE PRIMARY BOT (corregida) ---
+  // --- LÓGICA DE PRIMARY BOT ---
   if (consolePrimary && consolePrimary !== botJid) {
     const hasPrefix = settings.prefix === true
       ? true
@@ -190,8 +233,8 @@ export default async (client, m) => {
       }
       const primaryInGroup = groupParticipants.some(p => (p.id || p.jid) === consolePrimary);
       const primaryInSessions = getAllSessionBots(client).includes(consolePrimary);
-      // Solo ceder si el bot primario está en el grupo y en sesiones
       if (primaryInSessions && primaryInGroup) {
+        console.log(`🔄 Cediendo comando a primaryBot: ${consolePrimary}`);
         return;
       }
     }
@@ -293,7 +336,6 @@ export default async (client, m) => {
 
   if (!command) return;
 
-  const cmdData = global.comandos.get(command);
   if (!cmdData) {
     if (settings.prefix === true) return;
     await client.readMessages([m.key]);
@@ -301,23 +343,6 @@ export default async (client, m) => {
       `ꕤ El comando *${command}* no existe.\n✎ Usa *${usedPrefix}help* para ver la lista de comandos disponibles.`
     );
   }
-
-  // ========== DEPURACIÓN POR WHATSAPP ==========
-  if (m.isGroup && cmdData && cmdData.isAdmin) {
-    const ownerJid = global.owner[0] + '@s.whatsapp.net'; // primer owner
-    const debugMsg = `🔍 DEBUG ADMIN (${command})\n` +
-      `Sender: ${sender}\n` +
-      `BotJid: ${botJid}\n` +
-      `Admins raw: ${JSON.stringify(groupAdmins)}\n` +
-      `isAdmins: ${isAdmins}\n` +
-      `isBotAdmins: ${isBotAdmins}\n` +
-      `Metadata obtenida: ${groupMetadata ? 'sí' : 'no'}\n` +
-      `Participantes: ${participants.length}\n` +
-      `Chat: ${m.chat}\n` +
-      `Grupo: ${groupName}`;
-    await client.sendMessage(ownerJid, { text: debugMsg }).catch(e => console.log('Error enviando debug:', e));
-  }
-  // =============================================
 
   if (
     cmdData.isOwner &&
