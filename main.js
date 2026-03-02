@@ -14,8 +14,7 @@ seeCommands()
 
 export default async (client, m) => {
 if (!m.message) return
-const sender = (m.sender || '').replace('@lid', '@s.whatsapp.net').split(':')[0] + '@s.whatsapp.net'
-await client.sendMessage(m.chat, { text: `isGroup: ${m.isGroup}\nchat: ${m.chat}\nsender: ${sender}` }, { quoted: m })
+const sender = m.sender 
 let body = m.message.conversation || m.message.extendedTextMessage?.text || m.message.imageMessage?.caption || m.message.videoMessage?.caption || m.message.buttonsResponseMessage?.selectedButtonId || m.message.listResponseMessage?.singleSelectReply?.selectedRowId || m.message.templateButtonReplyMessage?.selectedId || ''
 
 initDB(m, client)
@@ -85,16 +84,9 @@ if (m.isGroup) {
 groupMetadata = await client.groupMetadata(m.chat).catch(() => null)
 groupName = groupMetadata?.subject || ''
 groupAdmins = groupMetadata?.participants.filter(p => (p.admin === 'admin' || p.admin === 'superadmin')) || []
-await client.sendMessage(m.chat, { text: `DEBUG:\nBOT: ${botJid}\nSENDER: ${sender}\nADMINS: ${JSON.stringify(groupAdmins.map(p => p.id))}` }, { quoted: m })
 }
-const isBotAdmins = m.isGroup ? groupAdmins.some(p => {
-const pid = (p.id || p.jid || '').replace('@lid', '@s.whatsapp.net').split(':')[0] + '@s.whatsapp.net'
-return pid === botJid
-}) : false
-const isAdmins = m.isGroup ? groupAdmins.some(p => {
-const pid = (p.id || p.jid || '').replace('@lid', '@s.whatsapp.net').split(':')[0] + '@s.whatsapp.net'
-return pid === sender
-}) : false
+const isBotAdmins = m.isGroup ? groupAdmins.some(p => p.phoneNumber === botJid || p.jid === botJid || p.id === botJid || p.lid === botJid ) : false
+const isAdmins = m.isGroup ? groupAdmins.some(p => p.phoneNumber === sender || p.jid === sender || p.id === sender || p.lid === sender ) : false
 
 const chatData = global.db.data.chats[from]
 const consolePrimary = chatData.primaryBot
