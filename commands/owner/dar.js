@@ -15,49 +15,52 @@ function flattenCharacters(structure) {
 
 const formatMessage = (text) => `《✧》 ${text}`;
 
+const normalizeNumber = (num) => {
+    let cleaned = num.replace(/\s+/g, '');
+    if (!cleaned.includes('@')) {
+        cleaned = cleaned + '@s.whatsapp.net';
+    }
+    return cleaned;
+};
+
 export default {
     command: ['dar', 'regalo', 'darputa'],
     isOwner: true,
     run: async (client, m, args, usedPrefix, command) => {
         try {
-            // --- Obtener usuario destino (prioridad: mención > cita > número en args) ---
-            let targetId;
-            const mentioned = m.mentionedJid;
-            
-            // Si hay mención, usamos la primera
-            if (mentioned.length > 0) {
-                targetId = await resolveLidToRealJid(mentioned[0], client, m.chat);
+            // --- 1. Determinar el destinatario ---
+            let targetId = null;
+
+            // Prioridad 1: Menciones
+            if (m.mentionedJid && m.mentionedJid.length > 0) {
+                targetId = await resolveLidToRealJid(m.mentionedJid[0], client, m.chat);
             }
-            // Si no hay mención pero hay mensaje citado
+            // Prioridad 2: Mensaje citado
             else if (m.quoted) {
                 targetId = await resolveLidToRealJid(m.quoted.sender, client, m.chat);
             }
-            // Si no hay mención ni cita, intentamos tomar el último argumento como número
+            // Prioridad 3: Último argumento si parece un número (sin @)
             else if (args.length > 0) {
-                // El último argumento podría ser un número
-                const possibleNumber = args[args.length - 1];
-                // Si parece un número (solo dígitos, quizás con +)
-                if (/^\+?\d+$/.test(possibleNumber)) {
-                    targetId = normalizeNumber(possibleNumber);
-                    // Quitamos ese último argumento de args para que no interfiera con el identificador
+                // El último argumento podría ser el número
+                const lastArg = args[args.length - 1];
+                // Si no tiene @ y parece un número (solo dígitos y quizás +)
+                if (!lastArg.includes('@') && /^[0-9+]+$/.test(lastArg)) {
+                    targetId = normalizeNumber(lastArg);
+                    // Quitamos ese argumento de la lista
                     args.pop();
-                } else {
-                    return client.reply(m.chat, formatMessage('❀ Debes mencionar al usuario, citar un mensaje o proporcionar un número.'), m);
                 }
-            } else {
-                return client.reply(m.chat, formatMessage('❀ Debes mencionar al usuario, citar un mensaje o proporcionar un número.'), m);
             }
 
             if (!targetId) {
-                return client.reply(m.chat, formatMessage('❀ No se pudo determinar el usuario destino.'), m);
+                return client.reply(m.chat, formatMessage('❀ Debes mencionar, citar o escribir el número del destinatario.'), m);
             }
 
-            // --- Obtener identificador del personaje (todo lo que sobra en args) ---
-            if (args.length < 1) {
+            // --- 2. Identificador del personaje (lo que queda en args) ---
+            if (args.length === 0) {
                 return client.reply(m.chat, formatMessage('ꕥ Ingresa el ID o nombre del personaje.\nEjemplo: #dar 100001 @usuario  o  #dar Lelouch @usuario'), m);
             }
 
-            const identifier = args.join(' ').trim(); // Ya quitamos el último si era número
+            const identifier = args.join(' ').trim();
 
             await m.react('🕒');
 
@@ -72,7 +75,7 @@ export default {
 
             const allCharacters = flattenCharacters(catalog);
 
-            // Buscar personaje por ID o nombre
+            // Buscar personaje
             let character;
             if (/^\d+$/.test(identifier)) {
                 character = allCharacters.find(c => String(c.id) === identifier);
@@ -104,7 +107,7 @@ export default {
                 };
             }
 
-            // Asegurar que el usuario destino tenga objeto en el chat
+            // Asegurar usuario destino
             if (!global.db.data.chats[m.chat].users[targetId]) {
                 global.db.data.chats[m.chat].users[targetId] = {
                     stats: {},
@@ -121,39 +124,56 @@ export default {
                 global.db.data.chats[m.chat].users[targetId].characters = [];
             }
 
-            // --- Verificar si el personaje ya tiene dueño ---
-            const currentOwnerId = global.db.data.chats[m.chat].characters[charId].user;
+            // --- Verificar si ya lo tiene (opcional, puedes omitir si quieres permitir duplicados) ---
+            if (global.db.data.chats[m.chat].users[targetId].characters.includes(charId)) {
+                await m.react('✖️');
+                return client.reply(m.chat, formatMessage(`❀ El usuario ya tiene el personaje *${charName}* (ID: ${charId}).`), m);
+            }
+
+            // --- Buscar al dueño actual del personaje ---
+            const currentOwner = global.db.data.chats[m.chat].characters[charId].user;
             let oldOwnerName = null;
+            let oldOwnerId = null;
 
-            if (currentOwnerId) {
-                // Guardar nombre del antiguo dueño para el mensaje
-                oldOwnerName = global.db.data.users[currentOwnerId]?.name || currentOwnerId.split('@')[0];
-                
+            if (currentOwner) {
+                // Guardamos datos del antiguo dueño
+                oldOwnerId = currentOwner;
+                oldOwnerName = global.db.data.users[currentOwner]?.name || currentOwner.split('@')[0];
+
                 // Quitar el personaje del array del antiguo dueño
-                if (global.db.data.chats[m.chat].users[currentOwnerId]?.characters) {
-                    global.db.data.chats[m.chat].users[currentOwnerId].characters = 
-                        global.db.data.chats[m.chat].users[currentOwnerId].characters.filter(id => id !== charId);
+                if (global.db.data.chats[m.chat].users[currentOwner]) {
+                    const userChars = global.db.data.chats[m.chat].users[currentOwner].characters;
+                    if (Array.isArray(userChars)) {
+                        const index = userChars.indexOf(charId);
+                        if (index !== -1) userChars.splice(index, 1);
+                    }
                 }
-                
-                // Si el antiguo dueño lo tenía como favorito, eliminar favorito
-                if (global.db.data.chats[m.chat].users[currentOwnerId]?.favorite === charId) {
-                    delete global.db.data.chats[m.chat].users[currentOwnerId].favorite;
+                // También de users global si existe
+                if (global.db.data.users[currentOwner] && Array.isArray(global.db.data.users[currentOwner].characters)) {
+                    const index = global.db.data.users[currentOwner].characters.indexOf(charId);
+                    if (index !== -1) global.db.data.users[currentOwner].characters.splice(index, 1);
                 }
-                if (global.db.data.users[currentOwnerId]?.favorite === charId) {
-                    delete global.db.data.users[currentOwnerId].favorite;
+
+                // Limpiar favorito si era su favorito
+                if (global.db.data.chats[m.chat].users[currentOwner]?.favorite === charId) {
+                    delete global.db.data.chats[m.chat].users[currentOwner].favorite;
+                }
+                if (global.db.data.users[currentOwner]?.favorite === charId) {
+                    delete global.db.data.users[currentOwner].favorite;
+                }
+
+                // Limpiar de ventas si estaba en venta
+                if (global.db.data.chats[m.chat].sales?.[charId] && global.db.data.chats[m.chat].sales[charId].user === currentOwner) {
+                    delete global.db.data.chats[m.chat].sales[charId];
                 }
             }
 
-            // --- Añadir el personaje al nuevo dueño ---
-            if (!global.db.data.chats[m.chat].users[targetId].characters.includes(charId)) {
-                global.db.data.chats[m.chat].users[targetId].characters.push(charId);
-            }
-
-            // Actualizar la propiedad en chat.characters
+            // Añadir el personaje al nuevo dueño
+            global.db.data.chats[m.chat].users[targetId].characters.push(charId);
             global.db.data.chats[m.chat].characters[charId].user = targetId;
             global.db.data.chats[m.chat].characters[charId].claimedAt = Date.now();
 
-            // ========== TAMBIÉN GUARDAR EN users GLOBAL ==========
+            // También en users global
             if (!global.db.data.users[targetId]) {
                 global.db.data.users[targetId] = {
                     name: null,
@@ -181,16 +201,15 @@ export default {
             global.saveDatabase();
 
             await m.react('✔️');
-            
-            // Mensaje personalizado según si había dueño previo
-            let replyMsg;
-            if (currentOwnerId) {
-                replyMsg = formatMessage(`❀ Personaje *${charName}* (ID: ${charId}) transferido de ${oldOwnerName} a @${targetId.split('@')[0]}.`);
-            } else {
-                replyMsg = formatMessage(`❀ Personaje *${charName}* (ID: ${charId}) ha sido dado a @${targetId.split('@')[0]}.`);
+
+            // Mensaje de respuesta
+            const targetName = global.db.data.users[targetId]?.name || targetId.split('@')[0];
+            let replyMsg = `❀ Personaje *${charName}* (ID: ${charId}) ha sido dado a @${targetId.split('@')[0]}.`;
+            if (oldOwnerId) {
+                replyMsg = `❀ Personaje *${charName}* (ID: ${charId}) transferido de ${oldOwnerName} a @${targetId.split('@')[0]}.`;
             }
-            
-            client.reply(m.chat, replyMsg, m, { mentions: [targetId] });
+
+            client.reply(m.chat, formatMessage(replyMsg), m, { mentions: [targetId] });
 
         } catch (error) {
             console.error(error);
