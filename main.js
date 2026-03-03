@@ -8,7 +8,7 @@ import seeCommands from './lib/system/commandLoader.js';
 import initDB from './lib/system/initDB.js';
 import antilink from './commands/antilink.js';
 import level from './commands/level.js';
-import { getGroupAdmins } from './lib/message.js';  // se mantiene, aunque no se usa directamente en admin check
+import { getGroupAdmins } from './lib/message.js';  // se mantiene importada
 
 seeCommands()
 
@@ -86,7 +86,23 @@ groupName = groupMetadata?.subject || ''
 groupAdmins = groupMetadata?.participants.filter(p => (p.admin === 'admin' || p.admin === 'superadmin')) || []
 }
 const isBotAdmins = m.isGroup ? groupAdmins.some(p => p.phoneNumber === botJid || p.jid === botJid || p.id === botJid || p.lid === botJid ) : false
-// isAdmins ha sido eliminado; ahora usamos m.isAdmin (definido en smsg)
+
+// --- VERIFICACIÓN DE RESPALDO PARA m.isAdmin (si no está definido) ---
+if (m.isGroup && m.isAdmin === undefined) {
+  try {
+    const meta = groupMetadata || await client.groupMetadata(m.chat).catch(() => null)
+    if (meta) {
+      const adminListNormalized = getGroupAdmins(meta.participants || [])
+      const senderNormalized = sender.split('@')[0].split(':')[0] + '@s.whatsapp.net'
+      m.isAdmin = adminListNormalized.includes(senderNormalized)
+    } else {
+      m.isAdmin = false
+    }
+  } catch (e) {
+    console.error('Error en respaldo de admin:', e)
+    m.isAdmin = false
+  }
+}
 
 const chatData = global.db.data.chats[from]
 const consolePrimary = chatData.primaryBot
@@ -149,7 +165,6 @@ if (!userrs.stats) userrs.stats = {}
 if (!userrs.stats[today]) userrs.stats[today] = { msgs: 0, cmds: 0 }
 userrs.stats[today].msgs++
 
-// --- NUEVO: uso de m.isAdmin para chat.adminonly ---
 if (chat.adminonly && !m.isAdmin) return
 if (!command) return
 const cmdData = global.comandos.get(command)
@@ -163,7 +178,6 @@ if (cmdData.isOwner && !global.owner.map(num => num + '@s.whatsapp.net').include
 if (settings.prefix === true) return
 return m.reply(`ꕤ El comando *${command}* no existe.\n✎ Usa *${usedPrefix}help* para ver la lista de comandos disponibles.`)
 }
-// --- NUEVA VALIDACIÓN DE ADMINISTRADOR USANDO m.isAdmin ---
 if (cmdData.isAdmin && !m.isAdmin) return client.reply(m.chat, mess.admin, m)
 if (cmdData.botAdmin && !isBotAdmins) return client.reply(m.chat, mess.botAdmin, m)
 try {
