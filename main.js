@@ -9,6 +9,7 @@ import initDB from './lib/system/initDB.js';
 import antilink from './commands/antilink.js';
 import level from './commands/level.js';
 import { getGroupAdmins } from './lib/message.js';
+import { registerLidMapping } from './lib/utils.js';
 seeCommands()
 export default async (client, m) => {
     if (!m.message) return
@@ -78,9 +79,15 @@ export default async (client, m) => {
     let groupMetadata = null
     let groupAdmins = []
     let groupName = ''
-    // LID raw del mensaje (antes de resolver a teléfono)
+    // Poblar cache de LID ↔ teléfono con el sender del mensaje actual
     const rawParticipant = m.key?.participant || ''
-    const rawBotId = client.user?.lid || client.user?.id || ''
+    if (rawParticipant.endsWith('@lid') && sender && !sender.endsWith('@lid')) {
+        registerLidMapping(rawParticipant, sender)
+    }
+    const rawBotId = client.user?.lid || ''
+    if (rawBotId && rawBotId.endsWith('@lid') && botJid) {
+        registerLidMapping(rawBotId, botJid)
+    }
     if (m.isGroup) {
         groupMetadata = await client.groupMetadata(m.chat).catch(() => null)
         groupName = groupMetadata?.subject || ''
@@ -88,10 +95,9 @@ export default async (client, m) => {
     }
     const isAdminParticipant = (targetJid, targetLid) => {
         return groupAdmins.some(p => {
-            const pid = (p.id || p.jid || '').toLowerCase()
-            const t1 = (targetJid || '').toLowerCase()
-            const t2 = (targetLid || '').toLowerCase()
-            return pid === t1 || pid === t2 || (t1 && pid.split('@')[0] === t1.split('@')[0])
+            const pid = (p.id || p.jid || '')
+            return pid === targetJid || pid === targetLid ||
+                (targetJid && pid.split('@')[0] === targetJid.split('@')[0])
         })
     }
     const isBotAdmins = m.isGroup ? isAdminParticipant(botJid, rawBotId) : false
