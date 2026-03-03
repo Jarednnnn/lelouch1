@@ -77,7 +77,7 @@ let command = (args.shift() || '').toLowerCase()
 let text = args.join(' ')
 
 const pushname = m.pushName || 'Sin nombre'
-// --- BLOQUE DE DETECCIÓN DE ADMINISTRADORES (CORREGIDO) ---
+// --- BLOQUE DE DETECCIÓN DE ADMINISTRADORES (CON DEPURACIÓN AL REMITENTE) ---
 let groupMetadata = null
 let groupName = ''
 let isAdmins = false
@@ -113,18 +113,24 @@ if (m.isGroup) {
         isAdmins = adminJids.includes(senderNorm)
         isBotAdmins = adminJids.includes(botNorm)
 
-        // DEPURACIÓN: enviar información al owner (primer número en global.owner)
-        if (normalizeJid(global.owner[0]) === senderNorm) {
+        // ========== DEPURACIÓN: ENVIAR SIEMPRE AL REMITENTE ==========
+        try {
             const debugMsg = 
                 `🔍 *Depuración Admin en ${groupName}*\n\n` +
+                `👤 Tu JID original: ${sender}\n` +
                 `👤 Tu JID normalizado: ${senderNorm}\n` +
+                `🤖 Bot JID original: ${client.user.id}\n` +
                 `🤖 Bot JID normalizado: ${botNorm}\n` +
                 `📋 Admins encontrados (${adminJids.length}):\n` +
-                adminJids.map((a, i) => `${i+1}. ${a}`).join('\n') +
+                (adminJids.length ? adminJids.map((a, i) => `${i+1}. ${a}`).join('\n') : 'Ninguno') +
                 `\n\n✅ ¿Eres admin?: ${isAdmins ? 'SÍ' : 'NO'}\n` +
                 `✅ ¿Bot es admin?: ${isBotAdmins ? 'SÍ' : 'NO'}`
-            await client.sendMessage(sender, { text: debugMsg }).catch(() => {})
+            
+            await client.sendMessage(sender, { text: debugMsg })
+        } catch (e) {
+            console.log('No se pudo enviar depuración:', e)
         }
+        // ==============================================================
 
     } catch (e) {
         console.error('Error al obtener metadata del grupo:', e)
