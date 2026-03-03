@@ -77,29 +77,25 @@ let command = (args.shift() || '').toLowerCase()
 let text = args.join(' ')
 
 const pushname = m.pushName || 'Sin nombre'
-let groupMetadata = null;
-let groupAdmins = [];
-let groupName = '';
+let groupMetadata = null
+let groupAdmins = []
+let groupAdminsIds = [] // Array solo con los IDs para comparación más fácil
+let groupName = ''
 
 if (m.isGroup) {
-  groupMetadata = await client.groupMetadata(m.chat).catch(() => null);
-  groupName = groupMetadata?.subject || '';
-  groupAdmins = groupMetadata?.participants.filter(p => (p.admin === 'admin' || p.admin === 'superadmin')) || [];
+    groupMetadata = await client.groupMetadata(m.chat).catch(() => null)
+    groupName = groupMetadata?.subject || ''
+    
+    if (groupMetadata?.participants) {
+        // Filtramos administradores correctamente
+        groupAdmins = groupMetadata.participants.filter(p => p.admin === 'admin' || p.admin === 'superadmin')
+        // Extraemos solo los IDs (JIDs) de los administradores
+        groupAdminsIds = groupAdmins.map(p => p.id)
+    }
 }
 
-const isBotAdmins = m.isGroup ? groupAdmins.some(p => p.id === botJid) : false;
-const isAdmins = m.isGroup ? groupAdmins.some(p => p.id === m.sender) : false;
-
-if (typeof plugin.isAdmin === 'boolean' && !isAdmins) {
-  // No hace falta el return reply
-}
-
-if (typeof plugin.botAdmin === 'boolean' && !isBotAdmins) {
-  // No hace falta el return reply
-}
-
-// Aquí ejecutas el plugin
-
+// Verificamos si el sender está en la lista de administradores comparando directamente los IDs
+const isAdmins = m.isGroup ? groupAdminsIds.includes(sender) : false
 const chatData = global.db.data.chats[from]
 const consolePrimary = chatData.primaryBot
 if (!consolePrimary || consolePrimary === client.user.id.split(':')[0] + '@s.whatsapp.net') {
