@@ -77,17 +77,21 @@ let command = (args.shift() || '').toLowerCase()
 let text = args.join(' ')
 
 const pushname = m.pushName || 'Sin nombre'
-// --- INICIO BLOQUE REEMPLAZADO ---
+// --- INICIO BLOQUE REEMPLAZADO (versión mejorada) ---
 let groupMetadata = null
 let groupName = ''
-let isAdmins = true
-let isBotAdmins = true
+let isAdmins = false
+let isBotAdmins = false
 
-// Función auxiliar para normalizar JIDs (usa decodeJid si existe, si no, método simple)
-const normalizeJid = (jid) => {
+// Función para decodificar JID (elimina sufijos como :3 y asegura formato)
+const decodeJid = (jid) => {
     if (!jid) return null
+    // Si el cliente tiene su propio decodificador, lo usamos
     if (client.decodeJid) return client.decodeJid(jid)
-    return jid.split(':')[0] + '@s.whatsapp.net'
+    // Fallback: quitar sufijo numérico después de ':' y asegurar dominio
+    let normalized = jid.split(':')[0]
+    if (!normalized.includes('@')) normalized += '@s.whatsapp.net'
+    return normalized
 }
 
 if (m.isGroup) {
@@ -95,28 +99,40 @@ if (m.isGroup) {
         groupMetadata = await client.groupMetadata(m.chat)
         groupName = groupMetadata.subject || ''
 
-        // Mapeamos participantes con JID normalizado y su rol de admin
-        const participants = (groupMetadata.participants || []).map(p => ({
-            jid: normalizeJid(p.id),
-            admin: p.admin || false
-        }))
+        // Obtener lista de participantes (puede venir en distintos formatos)
+        const participantsRaw = groupMetadata.participants || []
+        
+        // Mapear a objetos con JID normalizado y rol de admin
+        const participants = participantsRaw.map(p => {
+            // Buscar el identificador en cualquiera de los campos posibles
+            const rawJid = p.id || p.jid || p.phoneNumber || p.lid
+            return {
+                jid: decodeJid(rawJid),
+                admin: p.admin || false
+            }
+        })
 
-        // Normalizamos JID del remitente y del bot
-        const senderJid = normalizeJid(sender)
-        const botJidNormalized = normalizeJid(client.user.id)
+        // Normalizar JID del remitente y del bot
+        const senderJid = decodeJid(sender)
+        const botJidNormalized = decodeJid(client.user.id)
 
-        // Buscamos al usuario actual y al bot en la lista de participantes
+        // Buscar al usuario actual y al bot en la lista
         const userParticipant = participants.find(p => p.jid === senderJid)
         const botParticipant = participants.find(p => p.jid === botJidNormalized)
 
         isAdmins = !!(userParticipant && (userParticipant.admin === 'admin' || userParticipant.admin === 'superadmin'))
         isBotAdmins = !!(botParticipant && (botParticipant.admin === 'admin' || botParticipant.admin === 'superadmin'))
+
+        // (Opcional) Descomenta para depurar:
+        // console.log('senderJid:', senderJid, 'userParticipant:', userParticipant, 'isAdmins:', isAdmins)
+        // console.log('botJid:', botJidNormalized, 'botParticipant:', botParticipant, 'isBotAdmins:', isBotAdmins)
     } catch (e) {
         console.error('Error al obtener metadata del grupo:', e)
-        // En caso de error, dejamos isAdmins e isBotAdmins como false
+        // Si falla, asumimos que no es admin
         groupMetadata = null
     }
 }
+// --- FIN BLOQUE REEMPLAZADO ---
 // --- FIN BLOQUE REEMPLAZADO ---
 
 const chatData = global.db.data.chats[from]
