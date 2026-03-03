@@ -1,5 +1,5 @@
 > [!IMPORTANT]
-> **Este proyecto está en constante evolución. Estamos comprometidos en ofrecer a nuestra comunidad un Bot increíble. Te invitamos a instalarlo y para estar al tanto de todas las novedades. [¡Únete a nuestro nuevo canal!](https://whatsapp.com/channel/0029Vb64nWqLo4hb8cuxe23n)**
+> **lil(https://whatsapp.com/channel/0029Vb64nWqLo4hb8cuxe23n)**
 
 <p align="center"> 
 <img src="https://cdn2.sockywa.xyz/b1sSs.jpeg" alt="YukiBot-MD" style="width: 75%; height: auto; max-width: 100px;">
