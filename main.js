@@ -77,16 +77,28 @@ let command = (args.shift() || '').toLowerCase()
 let text = args.join(' ')
 
 const pushname = m.pushName || 'Sin nombre'
-let groupMetadata = null
-let groupAdmins = []
-let groupName = ''
+let groupMetadata = null;
+let groupAdmins = [];
+let groupName = '';
+
 if (m.isGroup) {
-groupMetadata = await client.groupMetadata(m.chat).catch(() => null)
-groupName = groupMetadata?.subject || ''
-groupAdmins = groupMetadata?.participants.filter(p => (p.admin === 'admin' || p.admin === 'superadmin')) || []
+  groupMetadata = await client.groupMetadata(m.chat).catch(() => null);
+  groupName = groupMetadata?.subject || '';
+  groupAdmins = groupMetadata?.participants.filter(p => (p.admin === 'admin' || p.admin === 'superadmin')) || [];
 }
-const isBotAdmins = m.isGroup ? groupAdmins.some(p => p.phoneNumber === botJid || p.jid === botJid || p.id === botJid || p.lid === botJid ) : false
-const isAdmins = m.isGroup ? groupAdmins.some(p => p.phoneNumber === sender || p.jid === sender || p.id === sender || p.lid === sender ) : false
+
+const isBotAdmins = m.isGroup ? groupAdmins.some(p => p.id === botJid) : false;
+const isAdmins = m.isGroup ? groupAdmins.some(p => p.id === m.sender) : false;
+
+if (typeof plugin.isAdmin === 'boolean' && !isAdmins) {
+  // No hace falta el return reply
+}
+
+if (typeof plugin.botAdmin === 'boolean' && !isBotAdmins) {
+  // No hace falta el return reply
+}
+
+// Aquí ejecutas el plugin
 
 const chatData = global.db.data.chats[from]
 const consolePrimary = chatData.primaryBot
