@@ -77,16 +77,47 @@ let command = (args.shift() || '').toLowerCase()
 let text = args.join(' ')
 
 const pushname = m.pushName || 'Sin nombre'
+// --- INICIO BLOQUE REEMPLAZADO ---
 let groupMetadata = null
-let groupAdmins = []
 let groupName = ''
-if (m.isGroup) {
-groupMetadata = await client.groupMetadata(m.chat).catch(() => null)
-groupName = groupMetadata?.subject || ''
-groupAdmins = groupMetadata?.participants.filter(p => (p.admin === 'admin' || p.admin === 'superadmin')) || []
+let isAdmins = false
+let isBotAdmins = false
+
+// Función auxiliar para normalizar JIDs (usa decodeJid si existe, si no, método simple)
+const normalizeJid = (jid) => {
+    if (!jid) return null
+    if (client.decodeJid) return client.decodeJid(jid)
+    return jid.split(':')[0] + '@s.whatsapp.net'
 }
-const isBotAdmins = m.isGroup ? groupAdmins.some(p => p.phoneNumber === botJid || p.jid === botJid || p.id === botJid || p.lid === botJid ) : false
-const isAdmins = m.isGroup ? groupAdmins.some(p => p.phoneNumber === sender || p.jid === sender || p.id === sender || p.lid === sender ) : false
+
+if (m.isGroup) {
+    try {
+        groupMetadata = await client.groupMetadata(m.chat)
+        groupName = groupMetadata.subject || ''
+
+        // Mapeamos participantes con JID normalizado y su rol de admin
+        const participants = (groupMetadata.participants || []).map(p => ({
+            jid: normalizeJid(p.id),
+            admin: p.admin || false
+        }))
+
+        // Normalizamos JID del remitente y del bot
+        const senderJid = normalizeJid(sender)
+        const botJidNormalized = normalizeJid(client.user.id)
+
+        // Buscamos al usuario actual y al bot en la lista de participantes
+        const userParticipant = participants.find(p => p.jid === senderJid)
+        const botParticipant = participants.find(p => p.jid === botJidNormalized)
+
+        isAdmins = !!(userParticipant && (userParticipant.admin === 'admin' || userParticipant.admin === 'superadmin'))
+        isBotAdmins = !!(botParticipant && (botParticipant.admin === 'admin' || botParticipant.admin === 'superadmin'))
+    } catch (e) {
+        console.error('Error al obtener metadata del grupo:', e)
+        // En caso de error, dejamos isAdmins e isBotAdmins como false
+        groupMetadata = null
+    }
+}
+// --- FIN BLOQUE REEMPLAZADO ---
 
 const chatData = global.db.data.chats[from]
 const consolePrimary = chatData.primaryBot
