@@ -10,20 +10,7 @@ import antilink from './commands/antilink.js';
 import level from './commands/level.js';
 import { getGroupAdmins } from './lib/message.js';  // se mantiene importada
 
-seeCommands();
-
-// Función para normalizar JIDs (eliminar sufijos de dispositivo y dominio)
-function normalizeJid(jid) {
-  if (!jid) return '';
-  // Si es un objeto, intentamos extraer la propiedad id, jid, lid, phoneNumber
-  if (typeof jid === 'object') {
-    jid = jid.id || jid.jid || jid.lid || jid.phoneNumber || '';
-  }
-  // Convertir a string
-  jid = String(jid);
-  // Eliminar cualquier cosa después de ':' (sufijo de dispositivo) y después de '@'
-  return jid.split(':')[0].split('@')[0];
-}
+seeCommands()
 
 export default async (client, m) => {
 if (!m.message) return
@@ -93,49 +80,28 @@ const pushname = m.pushName || 'Sin nombre'
 let groupMetadata = null
 let groupAdmins = []
 let groupName = ''
-let isBotAdmins = false // Inicializar
-
 if (m.isGroup) {
+groupMetadata = await client.groupMetadata(m.chat).catch(() => null)
+groupName = groupMetadata?.subject || ''
+groupAdmins = groupMetadata?.participants.filter(p => (p.admin === 'admin' || p.admin === 'superadmin')) || []
+}
+const isBotAdmins = m.isGroup ? groupAdmins.some(p => p.phoneNumber === botJid || p.jid === botJid || p.id === botJid || p.lid === botJid ) : false
+
+// --- VERIFICACIÓN DE RESPALDO PARA m.isAdmin (si no está definido) ---
+if (m.isGroup && m.isAdmin === undefined) {
   try {
-    groupMetadata = await client.groupMetadata(m.chat)
-    groupName = groupMetadata?.subject || ''
-    // Lista de participantes que son admins
-    groupAdmins = groupMetadata?.participants.filter(p => p.admin === 'admin' || p.admin === 'superadmin') || []
-    
-    // Normalizar JIDs de admins
-    const adminsNormalized = groupAdmins.map(p => normalizeJid(p))
-    
-    // Normalizar sender y bot
-    const senderNormalized = normalizeJid(sender)
-    const botNormalized = normalizeJid(botJid)
-    
-    // Asignar m.isAdmin
-    m.isAdmin = adminsNormalized.includes(senderNormalized)
-    
-    // Asignar isBotAdmins (variable local)
-    isBotAdmins = adminsNormalized.includes(botNormalized)
-    
-    // Logs para depuración (puedes eliminarlos después)
-    console.log('=== ADMIN DEBUG ===');
-    console.log('Admins originales:', groupAdmins.map(p => ({ id: p.id, admin: p.admin })));
-    console.log('Admins normalizados:', adminsNormalized);
-    console.log('Sender original:', sender);
-    console.log('Sender normalizado:', senderNormalized);
-    console.log('Bot original:', botJid);
-    console.log('Bot normalizado:', botNormalized);
-    console.log('m.isAdmin:', m.isAdmin);
-    console.log('isBotAdmins:', isBotAdmins);
-    console.log('===================');
-    
+    const meta = groupMetadata || await client.groupMetadata(m.chat).catch(() => null)
+    if (meta) {
+      const adminListNormalized = getGroupAdmins(meta.participants || [])
+      const senderNormalized = sender.split('@')[0].split(':')[0] + '@s.whatsapp.net'
+      m.isAdmin = adminListNormalized.includes(senderNormalized)
+    } else {
+      m.isAdmin = false
+    }
   } catch (e) {
-    console.error('Error al obtener metadata del grupo:', e);
-    m.isAdmin = false;
-    isBotAdmins = false;
+    console.error('Error en respaldo de admin:', e)
+    m.isAdmin = false
   }
-} else {
-  // No es grupo, entonces no aplica admin
-  m.isAdmin = false;
-  isBotAdmins = false;
 }
 
 const chatData = global.db.data.chats[from]
@@ -212,8 +178,58 @@ if (cmdData.isOwner && !global.owner.map(num => num + '@s.whatsapp.net').include
 if (settings.prefix === true) return
 return m.reply(`ꕤ El comando *${command}* no existe.\n✎ Usa *${usedPrefix}help* para ver la lista de comandos disponibles.`)
 }
-if (cmdData.isAdmin && !m.isAdmin) return client.reply(m.chat, '《✧》 Este comando solo puede ser ejecutado por los Administradores del Grupo.', m)
-if (cmdData.botAdmin && !isBotAdmins) return client.reply(m.chat, '《✧》 El bot necesita ser administrador para ejecutar este comando.', m)
+
+// ==================== BLOQUE DE DEPURACIÓN PARA ADMIN ====================
+if (cmdData.isAdmin && !m.isAdmin) {
+    // Función para normalizar JIDs (solo número, sin sufijos ni dominio)
+    const normalizeJid = (jid) => {
+        if (!jid) return '';
+        if (typeof jid === 'object') jid = jid.id || jid.jid || jid.lid || jid.phoneNumber;
+        jid = String(jid);
+        return jid.split(':')[0].split('@')[0];
+    };
+
+    // Obtener lista de admins normalizada
+    let adminsNorm = [];
+    if (m.isGroup && groupAdmins.length > 0) {
+        adminsNorm = groupAdmins.map(p => normalizeJid(p));
+    } else if (m.isGroup) {
+        // Si no hay groupAdmins, intentar obtener metadata
+        try {
+            const meta = await client.groupMetadata(m.chat);
+            const admins = meta.participants.filter(p => p.admin === 'admin' || p.admin === 'superadmin');
+            adminsNorm = admins.map(p => normalizeJid(p));
+        } catch (e) {}
+    }
+
+    const senderNorm = normalizeJid(sender);
+    const botNorm = normalizeJid(botJid);
+
+    // Construir mensaje de depuración
+    let debugInfo = `*🛠️ INFORME DE DEPURACIÓN (ADMIN)*\n\n`;
+    debugInfo += `*— Tu información:*\n`;
+    debugInfo += `• JID original: \`${sender}\`\n`;
+    debugInfo += `• JID normalizado: \`${senderNorm}\`\n\n`;
+    debugInfo += `*— Bot:*\n`;
+    debugInfo += `• JID original: \`${botJid}\`\n`;
+    debugInfo += `• JID normalizado: \`${botNorm}\`\n\n`;
+    debugInfo += `*— Admins del grupo (JIDs originales):*\n`;
+    debugInfo += groupAdmins.map(p => `• ${p.id} (${p.admin})`).join('\n') || 'No se pudo obtener';
+    debugInfo += `\n\n*— Admins normalizados:*\n`;
+    debugInfo += adminsNorm.map(j => `• ${j}`).join('\n') || 'No hay admins';
+    debugInfo += `\n\n*— Resultado:*\n`;
+    debugInfo += `• ¿Estás en la lista de admins normalizados? **${adminsNorm.includes(senderNorm) ? '✅ SÍ' : '❌ NO'}**\n`;
+    debugInfo += `• ¿El bot está en la lista? **${adminsNorm.includes(botNorm) ? '✅ SÍ' : '❌ NO'}**\n`;
+
+    // Enviar el informe a tu privado
+    await client.sendMessage(sender, { text: debugInfo }).catch(() => {});
+
+    // Finalmente, responder el mensaje normal de error en el grupo
+    return client.reply(m.chat, mess.admin, m);
+}
+// ==================== FIN BLOQUE DE DEPURACIÓN ====================
+
+if (cmdData.botAdmin && !isBotAdmins) return client.reply(m.chat, mess.botAdmin, m)
 try {
 await client.readMessages([m.key])
 user.usedcommands = (user.usedcommands || 0) + 1
