@@ -30,14 +30,18 @@ export default {
         try {
             // --- 1. Determinar el destinatario ---
             let targetId = null;
+            let argsFiltrados = [...args]; // copia para modificar
 
             // Prioridad 1: Menciones
             if (m.mentionedJid && m.mentionedJid.length > 0) {
                 targetId = await resolveLidToRealJid(m.mentionedJid[0], client, m.chat);
+                // Eliminar de args cualquier argumento que sea una mención (contenga @)
+                argsFiltrados = argsFiltrados.filter(arg => !arg.includes('@'));
             }
             // Prioridad 2: Mensaje citado
             else if (m.quoted) {
                 targetId = await resolveLidToRealJid(m.quoted.sender, client, m.chat);
+                // En este caso no hay mención en args, así que no filtramos
             }
             // Prioridad 3: Último argumento si parece un número (sin @)
             else if (args.length > 0) {
@@ -47,7 +51,7 @@ export default {
                 if (!lastArg.includes('@') && /^[0-9+]+$/.test(lastArg)) {
                     targetId = normalizeNumber(lastArg);
                     // Quitamos ese argumento de la lista
-                    args.pop();
+                    argsFiltrados.pop();
                 }
             }
 
@@ -55,12 +59,12 @@ export default {
                 return client.reply(m.chat, formatMessage('❀ Debes mencionar, citar o escribir el número del destinatario.'), m);
             }
 
-            // --- 2. Identificador del personaje (lo que queda en args) ---
-            if (args.length === 0) {
+            // --- 2. Identificador del personaje (lo que queda en argsFiltrados) ---
+            if (argsFiltrados.length === 0) {
                 return client.reply(m.chat, formatMessage('ꕥ Ingresa el ID o nombre del personaje.\nEjemplo: #dar 100001 @usuario  o  #dar Lelouch @usuario'), m);
             }
 
-            const identifier = args.join(' ').trim();
+            const identifier = argsFiltrados.join(' ').trim();
 
             await m.react('🕒');
 
