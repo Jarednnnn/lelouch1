@@ -13052,32 +13052,6 @@
       }
     ]
   },
-  "86164316": {
-    "name": "One Piece",
-    "characters": [
-      {
-        "id": "496695",
-        "name": "Nami",
-        "gender": "Mujer",
-        "tags": ["nami"],
-        "value": 100
-      },
-      {
-        "id": "506026",
-        "name": "Zoro Roronoa",
-        "gender": "Hombre",
-        "tags": ["roronoa_zoro"],
-        "value": 100
-      },
-      {
-        "id": "516946",
-        "name": "Sanji",
-        "gender": "Hombre",
-        "tags": ["sanji"],
-        "value": 100
-      }
-    ]
-  },
   "88128282": {
     "name": "Girls' Frontline",
     "characters": [
