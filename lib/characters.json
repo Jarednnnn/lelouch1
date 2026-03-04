@@ -22956,7 +22956,7 @@
       {"id": "330465982056", "name": "Atalanta Alter", "gender": "Mujer", "tags": ["atalanta_alter"], "value": 100},
       {"id": "330465982057", "name": "Perseus (Fate)", "gender": "Hombre", "tags": ["perseus"], "value": 100},
       {"id": "330465982058", "name": "Semiramis (Fate)", "gender": "Mujer", "tags": ["semiramis"], "value": 100},
-      {"id": "330465982059", "name": "Amakusa Shirou", "gender": "Hombre", "tags": ["amakusa"], "value": 100},
+      {"id": "330465982059", "name": "Amakusa Shirou", "gender": "Hombre", "tags": ["Shirou Kotomine"], "value": 100},
       {"id": "330465982060", "name": "Jack el Destripador (Fate)", "gender": "Mujer", "tags": ["jack"], "value": 100},
       {"id": "330465982061", "name": "William Shakespeare (Fate)", "gender": "Hombre", "tags": ["shakespeare"], "value": 100},
       {"id": "330465982062", "name": "Mefistófeles (Fate)", "gender": "Hombre", "tags": ["mephisto"], "value": 100},
