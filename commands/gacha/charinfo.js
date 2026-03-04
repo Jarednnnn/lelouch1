@@ -209,7 +209,7 @@ export default {
 
       const media = mediaList[Math.floor(Math.random() * mediaList.length)]
       const source = getSeriesNameByCharacter(dbChars, character.id)
-      const msg = `❀ Nombre » *${character.name}*\n⚥ Género » *${character.gender || 'Desconocido'}*\n❖ Fuente » *${source}*${usedFallback ? '\n⚠️ Imagen obtenida de Pinterest (fallback)' : ''}`
+      const msg = `❀ Nombre » *${character.name}*\n⚥ Género » *${character.gender || 'Desconocido'}*\n❖ Fuente » *${source}*${usedFallback ? '\n' : ''}`
 
       await client.sendMessage(m.chat, { image: { url: media }, caption: msg }, { quoted: m })
     } catch (e) {
