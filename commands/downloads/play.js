@@ -3,7 +3,6 @@ import fetch from 'node-fetch'
 import { getBuffer } from '../../lib/message.js'
 
 const isYTUrl = (url) => /^(https?:\/\/)?(www\.)?(youtube\.com|youtu\.be)\/.+$/i.test(url)
-
 async function getVideoInfo(query, videoMatch) {
   const search = await yts(query)
   if (!search.all.length) return null
@@ -17,14 +16,12 @@ export default {
   run: async (client, m, args, usedPrefix, command) => {
     try {
       if (!args[0]) {
-        return m.reply('《✧》 Por favor, menciona el nombre o URL del video que deseas descargar')
+        return m.reply('《✧》Por favor, menciona el nombre o URL del video que deseas descargar')
       }
       const text = args.join(' ')
       const videoMatch = text.match(/(?:youtu\.be\/|youtube\.com\/(?:watch\?v=|embed\/|shorts\/|live\/|v\/))([a-zA-Z0-9_-]{11})/)
       const query = videoMatch ? 'https://youtu.be/' + videoMatch[1] : text
       let url = query, title = null, thumbBuffer = null
-
-      // Obtener información del video
       try {
         const videoInfo = await getVideoInfo(query, videoMatch)
         if (videoInfo) {
@@ -43,31 +40,13 @@ export default {
           await client.sendMessage(m.chat, { image: thumbBuffer, caption: infoMessage }, { quoted: m })
         }
       } catch (err) {
-        console.error('Error al obtener info del video:', err)
       }
-
-      // Obtener URL de audio desde APIs
       const audio = await getAudioFromApis(url)
-      if (!audio || typeof audio.url !== 'string' || !audio.url.startsWith('http')) {
-        return m.reply('《✧》 No se pudo obtener un enlace de descarga válido. Intenta con otra canción más tarde.')
+      if (!audio?.url) {
+        return m.reply('《✧》 No se pudo descargar el *audio*, intenta más tarde.')
       }
-
-      // Descargar el audio
-      let audioBuffer
-      try {
-        audioBuffer = await getBuffer(audio.url)
-      } catch (err) {
-        console.error('Error en getBuffer:', err)
-        return m.reply('《✧》 Error al descargar el archivo de audio.')
-      }
-
-      // Enviar el audio
-      await client.sendMessage(m.chat, {
-        audio: audioBuffer,
-        fileName: `${title || 'audio'}.mp3`,
-        mimetype: 'audio/mpeg'
-      }, { quoted: m })
-
+      const audioBuffer = await getBuffer(audio.url)
+      await client.sendMessage(m.chat, { audio: audioBuffer, fileName: `${title || 'audio'}.mp3`, mimetype: 'audio/mpeg' }, { quoted: m })
     } catch (e) {
       await m.reply(`> An unexpected error occurred while executing command *${usedPrefix + command}*. Please try again or contact support if the issue persists.\n> [Error: *${e.message}*]`)
     }
@@ -92,24 +71,9 @@ async function getAudioFromApis(url) {
       const timeout = setTimeout(() => controller.abort(), 10000)
       const res = await fetch(endpoint, { signal: controller.signal }).then(r => r.json())
       clearTimeout(timeout)
-
-      let link = extractor(res)
-
-      // Validar que sea una URL válida (string que empiece con http)
-      if (typeof link === 'string' && link.startsWith('http')) {
-        return { url: link, api }
-      }
-
-      // Si el extractor devolvió un objeto con propiedad .url, lo usamos
-      if (link && typeof link === 'object' && link.url && typeof link.url === 'string' && link.url.startsWith('http')) {
-        return { url: link.url, api }
-      }
-
-      // Si no es válido, probamos la siguiente API
-    } catch (e) {
-      // Opcional: loguear el error para depuración
-      // console.error(`Error en API ${api}:`, e.message)
-    }
+      const link = extractor(res)
+      if (link) return { url: link, api }
+    } catch (e) {}
     await new Promise(resolve => setTimeout(resolve, 500))
   }
   return null
