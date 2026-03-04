@@ -3,6 +3,9 @@ import { promises as fs } from 'fs'
 
 const FILE_PATH = './lib/characters.json'
 
+// memoria simple para evitar repetir la última imagen
+const lastImageSent = new Map()
+
 async function loadCharacters() {
   try {
     await fs.access(FILE_PATH)
@@ -31,18 +34,20 @@ function formatTag(tag) {
   return String(tag).trim().toLowerCase().replace(/\s+/g, '_')
 }
 
-/* ==========================
-   BUSCADOR PRINCIPAL (BOORUS)
-========================== */
+/* =========================
+   BOORUS (MEJORADO)
+========================= */
 
 async function buscarImagenDelirius(tag) {
   const query = formatTag(tag)
 
   const urls = [
-    `https://safebooru.org/index.php?page=dapi&s=post&q=index&json=1&tags=${query}`,
-    `https://danbooru.donmai.us/posts.json?tags=${query}`,
-    `https://gelbooru.com/index.php?page=dapi&s=post&q=index&json=1&tags=${query}&api_key=f965be362e70972902e69652a472b8b2df2c5d876cee2dc9aebc7d5935d128db98e9f30ea4f1a7d497e762f8a82f132da65bc4e56b6add0f6283eb9b16974a1a&user_id=1862243`
+    `https://safebooru.org/index.php?page=dapi&s=post&q=index&json=1&limit=25&tags=${query}`,
+    `https://danbooru.donmai.us/posts.json?limit=25&tags=${query}`,
+    `https://gelbooru.com/index.php?page=dapi&s=post&q=index&json=1&limit=25&tags=${query}&api_key=f965be362e70972902e69652a472b8b2df2c5d876cee2dc9aebc7d5935d128db98e9f30ea4f1a7d497e762f8a82f132da65bc4e56b6add0f6283eb9b16974a1a&user_id=1862243`
   ]
+
+  let allImages = []
 
   for (const url of urls) {
     try {
@@ -73,25 +78,24 @@ async function buscarImagenDelirius(tag) {
           /\.(jpe?g|png)$/i.test(u)
         )
 
-      if (valid.length) return valid
+      allImages.push(...valid)
 
     } catch {}
   }
 
-  return []
+  return [...new Set(allImages)]
 }
 
-/* ==========================
-   FALLBACK ANILIST (OFICIAL)
-========================== */
+/* =========================
+   FALLBACK ANILIST
+========================= */
 
 async function buscarImagenAniList(nombre) {
   try {
     const query = `
       query ($search: String) {
         Character(search: $search) {
-          name { full }
-          image { large }
+          image { large medium }
         }
       }
     `
@@ -106,18 +110,22 @@ async function buscarImagenAniList(nombre) {
     })
 
     const json = await res.json()
-    const img = json?.data?.Character?.image?.large
+    const img = json?.data?.Character?.image
 
-    if (img) return [img]
+    const list = []
+    if (img?.large) list.push(img.large)
+    if (img?.medium) list.push(img.medium)
 
-  } catch {}
+    return list
 
-  return []
+  } catch {
+    return []
+  }
 }
 
-/* ==========================
+/* =========================
    COMANDO
-========================== */
+========================= */
 
 export default {
   command: ['charimage', 'waifuimage', 'cimage', 'wimage'],
@@ -156,21 +164,10 @@ export default {
             c.tags.some(tag =>
               tag.toLowerCase().includes(nameQuery)
             ))
-        ) ||
-        allCharacters.find(c =>
-          nameQuery.split(' ').some(q =>
-            String(c.name).toLowerCase().includes(q) ||
-            (Array.isArray(c.tags) &&
-              c.tags.some(tag =>
-                tag.toLowerCase().includes(q)
-              ))
-          )
         )
 
       if (!character) {
-        return m.reply(
-          `ꕥ No se encontró el personaje *${nameQuery}*.`
-        )
+        return m.reply(`ꕥ No se encontró el personaje *${nameQuery}*.`)
       }
 
       const tag = Array.isArray(character.tags)
@@ -183,28 +180,28 @@ export default {
         )
       }
 
-      /* ======================
-         INTENTO 1: BOORUS
-      ====================== */
+      /* ===== BUSCAR IMAGEN ===== */
 
       let mediaList = await buscarImagenDelirius(tag)
-
-      /* ======================
-         FALLBACK: ANILIST
-      ====================== */
 
       if (!mediaList.length) {
         mediaList = await buscarImagenAniList(character.name)
       }
 
-      const media =
-        mediaList[Math.floor(Math.random() * mediaList.length)]
-
-      if (!media) {
+      if (!mediaList.length) {
         return m.reply(
-          `ꕥ No se encontraron imágenes para *${character.name}* con el tag *${tag}*.`
+          `ꕥ No se encontraron imágenes para *${character.name}*.`
         )
       }
+
+      // evitar repetir la última
+      const last = lastImageSent.get(character.id)
+      const filtered = mediaList.filter(u => u !== last)
+
+      const usable = filtered.length ? filtered : mediaList
+      const media = usable[Math.floor(Math.random() * usable.length)]
+
+      lastImageSent.set(character.id, media)
 
       const source =
         getSeriesNameByCharacter(dbChars, character.id)
@@ -222,8 +219,8 @@ export default {
 
     } catch (e) {
       await m.reply(
-        `> An unexpected error occurred while executing command *${usedPrefix + command}*.\n` +
-        `> [Error: *${e.message}*]`
+        `> Error ejecutando *${usedPrefix + command}*\n` +
+        `> [${e.message}]`
       )
     }
   }
