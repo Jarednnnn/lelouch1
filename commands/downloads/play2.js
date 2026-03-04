@@ -1,7 +1,6 @@
 import yts from 'yt-search'
 import fetch from 'node-fetch'
 import { getBuffer } from '../../lib/message.js'
-import ytdl from 'ytdl-core' // 👈 Añadido
 
 const isYTUrl = (url) => /^(https?:\/\/)?(www\.)?(youtube\.com|youtu\.be)\/.+$/i.test(url)
 
@@ -60,7 +59,6 @@ async function getVideoFromApis(url) {
     { api: 'Vreden v2', endpoint: `${global.APIs.vreden.url}/api/v1/download/play/video?query=${encodeURIComponent(url)}`, extractor: res => res.result?.download?.url }
   ]
 
-  // Intentar con APIs externas
   for (const { api, endpoint, extractor } of apis) {
     try {
       const controller = new AbortController()
@@ -72,17 +70,5 @@ async function getVideoFromApis(url) {
     } catch (e) {}
     await new Promise(resolve => setTimeout(resolve, 500))
   }
-
-  // Si ninguna API funcionó, usar ytdl-core como respaldo
-  try {
-    const info = await ytdl.getInfo(url)
-    // Buscar un formato de video con URL directa (calidad media-baja para mayor compatibilidad)
-    const format = info.formats.find(f => f.hasVideo && f.hasAudio && f.url && f.qualityLabel?.includes('360p'))
-      || info.formats.find(f => f.hasVideo && f.hasAudio && f.url)
-      || info.formats.find(f => f.hasVideo && f.url)
-    if (format?.url) {
-      return { url: format.url, api: 'ytdl-core' }
-    }
-  } catch (e) {}
   return null
 }
