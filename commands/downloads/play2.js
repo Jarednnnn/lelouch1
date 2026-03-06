@@ -1,6 +1,16 @@
 import yts from 'yt-search'
 import fetch from 'node-fetch'
 import { getBuffer } from '../../lib/message.js'
+import ytdl from 'ytdl-core'           // <-- AÑADIDO
+import fs from 'fs'                     // <-- AÑADIDO
+import path from 'path'                 // <-- AÑADIDO
+import { fileURLToPath } from 'url'     // <-- AÑADIDO
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url))
+const tmpDir = path.join(__dirname, '../../tmp')
+
+// Crear carpeta tmp si no existe
+if (!fs.existsSync(tmpDir)) fs.mkdirSync(tmpDir, { recursive: true })
 
 const isYTUrl = (url) => /^(https?:\/\/)?(www\.)?(youtube\.com|youtu\.be)\/.+$/i.test(url)
 
@@ -37,11 +47,21 @@ export default {
           }
         }
       } catch (err) {
+        // Ignorar error de búsqueda
       }
-      const video = await getVideoFromApis(url)
+
+      // Intentar con APIs externas
+      let video = await getVideoFromApis(url)
+      
+      // Si las APIs fallan, usar ytdl-core como fallback
       if (!video?.url) {
-        return m.reply('《✧》 No se pudo descargar el *video*, intenta más tarde.')
+        console.log('API falló, usando ytdl-core como fallback')
+        video = await downloadWithYtdl(url)
+        if (!video?.url) {
+          return m.reply('《✧》 No se pudo descargar el *video*, intenta más tarde.')
+        }
       }
+
       const videoBuffer = await getBuffer(video.url)
       await client.sendMessage(m.chat, { video: videoBuffer, fileName: `${title || 'video'}.mp4`, mimetype: 'video/mp4' }, { quoted: m })
     } catch (e) {
@@ -71,4 +91,61 @@ async function getVideoFromApis(url) {
     await new Promise(resolve => setTimeout(resolve, 500))
   }
   return null
+}
+
+// ==================== NUEVA FUNCIÓN FALLBACK ====================
+async function downloadWithYtdl(url) {
+  try {
+    // Validar que sea una URL de YouTube válida
+    if (!ytdl.validateURL(url)) {
+      console.log('URL no válida para ytdl-core')
+      return null
+    }
+
+    // Obtener información del video (opcional, para el nombre)
+    const info = await ytdl.getInfo(url)
+    const title = info.videoDetails.title.replace(/[^\w\s]/gi, '') // limpiar nombre
+
+    // Elegir formato de video con calidad baja para evitar archivos muy grandes
+    const format = ytdl.chooseFormat(info.formats, { 
+      quality: 'lowest',
+      filter: 'videoandaudio' 
+    })
+
+    if (!format) {
+      console.log('No se encontró formato de video')
+      return null
+    }
+
+    // Descargar el video a un archivo temporal
+    const fileName = `yt_fallback_${Date.now()}.mp4`
+    const filePath = path.join(tmpDir, fileName)
+    
+    const stream = ytdl(url, { format })
+    const writeStream = fs.createWriteStream(filePath)
+    
+    await new Promise((resolve, reject) => {
+      stream.pipe(writeStream)
+      writeStream.on('finish', resolve)
+      writeStream.on('error', reject)
+    })
+
+    // Verificar tamaño (máximo 100MB para WhatsApp)
+    const stats = fs.statSync(filePath)
+    const fileSizeMB = stats.size / (1024 * 1024)
+    if (fileSizeMB > 100) {
+      fs.unlinkSync(filePath)
+      console.log('Video demasiado grande (>100MB)')
+      return null
+    }
+
+    // Leer el archivo y luego eliminarlo
+    const buffer = fs.readFileSync(filePath)
+    fs.unlinkSync(filePath) // eliminar archivo temporal
+
+    return { url: buffer, api: 'ytdl-core (fallback)' }
+  } catch (err) {
+    console.error('Error en ytdl-core:', err)
+    return null
+  }
 }
