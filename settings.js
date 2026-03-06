@@ -5,17 +5,17 @@ global.botNumber = ''
 
 global.sessionName = 'Sessions/Owner'
 global.version = '^2.0 - Latest'
-global.dev = "© ⍴᥆ᥕᥱrᥱძ ᑲᥡ ⁱᵃᵐ|𝔇ĕ𝐬†𝓻⊙γ𒆜"
+global.dev = "© 𝓙𝓪𝓻𝓮𝓭  𝔒"
 global.links = {
 api: 'https://api.stellarwa.xyz',
 web: 'http://localhost:5010',
-channel: "https://whatsapp.com/channel/0029Vb64nWqLo4hb8cuxe23n",
-github: "https://github.com/The-King-Destroy/YukiBot-MD",
-gmail: "thekingdestroy507@gmail.com"
+channel: "https://whatsapp.com/channel/0029VbCclT7A89MqLoypyK27",
+github: "https://whatsapp.com/channel/0029VbCclT7A89MqLoypyK27",
+gmail: "."
 }
 global.my = {
-ch: '120363401404146384@newsletter',
-name: 'ೃ࿔ ყµҡเ ωαɓσƭร - σƒƒเ૮เαℓ ૮ɦαɳɳεℓ .ೃ࿐',
+ch: '120363408530468803@newsletter',
+name: 'ೃ࿔ ℓεℓσµ૮ɦ ωαɓσƭร - σƒƒเ૮เαℓ ૮ɦαɳɳεℓ .ೃ࿐',
 }
 
 global.mess = {
