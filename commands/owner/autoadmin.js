@@ -1,3 +1,5 @@
+import { resolveLidToRealJid } from "../../lib/utils.js"
+
 export default {
   command: ['autoadmin'],
   category: 'grupo',
@@ -10,41 +12,48 @@ export default {
       // Obtener metadatos del grupo
       const groupMetadata = await client.groupMetadata(chatId)
       
-      // Normalizar ID del bot (quitar :XX y asegurar dominio)
-      const botIdRaw = client.user.id.split(':')[0]
-      const botId = botIdRaw.includes('@') ? botIdRaw : botIdRaw + '@s.whatsapp.net'
+      // Número del bot (sin dominio y sin :XX)
+      const botNumber = client.user.id.split(':')[0].split('@')[0] + '@s.whatsapp.net'
       
-      // Buscar al bot en la lista de participantes
-      const botParticipant = groupMetadata.participants.find(p => 
-        p.id === botId || p.id.split('@')[0] === botId.split('@')[0]
-      )
+      // Variables para almacenar resultados
+      let botIsAdmin = false
+      let userIsAdmin = false
+      
+      // Recorrer participantes resolviendo LIDs
+      for (const participant of groupMetadata.participants) {
+        const realId = await resolveLidToRealJid(participant.id, client, chatId)
+        
+        // Verificar si es el bot
+        if (realId === botNumber) {
+          botIsAdmin = !!participant.admin
+        }
+        
+        // Verificar si es el usuario que ejecuta el comando
+        if (realId === sender) {
+          userIsAdmin = !!participant.admin
+        }
+        
+        // Si ya encontramos ambos, podemos romper el ciclo
+        if (botIsAdmin !== undefined && userIsAdmin !== undefined) break
+      }
       
       // Log en consola para depuración
       console.log('╭────────────────────────────···')
       console.log(`│ Grupo: ${groupMetadata.subject || 'sin nombre'} (${chatId})`)
-      console.log(`│ Bot ID detectado: ${botId}`)
-      console.log(`│ Bot encontrado en participantes: ${botParticipant ? 'SÍ' : 'NO'}`)
-      if (botParticipant) {
-        console.log(`│ Bot admin: ${botParticipant.admin ? 'SÍ' : 'NO'}`)
-      } else {
-        console.log(`│ IDs de algunos participantes:`, groupMetadata.participants.slice(0, 3).map(p => p.id))
-      }
+      console.log(`│ Bot número: ${botNumber}`)
+      console.log(`│ Bot admin: ${botIsAdmin ? 'SÍ' : 'NO'}`)
       console.log('╰────────────────────────────···')
       
       // Verificar que el bot sea admin
-      if (!botParticipant || !botParticipant.admin) {
+      if (!botIsAdmin) {
         console.log(`❌ El bot NO es admin en este grupo.`)
         return m.reply('《✧》 El bot no es administrador en este grupo. No puedo ejecutar el comando.')
       }
       
       console.log(`✅ El bot SÍ es admin en este grupo. Continuando...`)
       
-      // Buscar al usuario que ejecuta el comando (el owner)
-      const userParticipant = groupMetadata.participants.find(p => 
-        p.id === sender || p.id.split('@')[0] === sender.split('@')[0]
-      )
-      
-      if (userParticipant?.admin) {
+      // Verificar si el usuario ya es admin
+      if (userIsAdmin) {
         console.log(`ℹ️ El usuario ya es admin.`)
         return client.sendMessage(m.chat, { 
           text: `Usted ya tiene admin, mi señor.`, 
