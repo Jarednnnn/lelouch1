@@ -1,6 +1,6 @@
 export default {
   command: ['autoadmin'],
-  category: 'grupo',
+  category: 'owner',
   isOwner: true,
   botAdmin: true,
   run: async (client, m, args, usedPrefix, command) => {
