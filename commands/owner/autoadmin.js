@@ -9,63 +9,48 @@ export default {
     const sender = m.sender
     const chatId = m.chat
     try {
-      // Obtener metadatos del grupo
       const groupMetadata = await client.groupMetadata(chatId)
+      const botNumberRaw = client.user.id.split(':')[0].split('@')[0]
+      const botNumber = botNumberRaw + '@s.whatsapp.net'
       
-      // Número del bot (sin dominio y sin :XX)
-      const botNumber = client.user.id.split(':')[0].split('@')[0] + '@s.whatsapp.net'
-      
-      // Variables para almacenar resultados
-      let botIsAdmin = false
-      let userIsAdmin = false
-      
-      // Recorrer participantes resolviendo LIDs
-      for (const participant of groupMetadata.participants) {
-        const realId = await resolveLidToRealJid(participant.id, client, chatId)
-        
-        // Verificar si es el bot
-        if (realId === botNumber) {
-          botIsAdmin = !!participant.admin
-        }
-        
-        // Verificar si es el usuario que ejecuta el comando
-        if (realId === sender) {
-          userIsAdmin = !!participant.admin
-        }
-        
-        // Si ya encontramos ambos, podemos romper el ciclo
-        if (botIsAdmin !== undefined && userIsAdmin !== undefined) break
-      }
-      
-      // Log en consola para depuración
       console.log('╭────────────────────────────···')
       console.log(`│ Grupo: ${groupMetadata.subject || 'sin nombre'} (${chatId})`)
       console.log(`│ Bot número: ${botNumber}`)
+      console.log(`│ Participantes:`)
+      
+      let botIsAdmin = false
+      let userIsAdmin = false
+      
+      for (const participant of groupMetadata.participants) {
+        const realId = await resolveLidToRealJid(participant.id, client, chatId)
+        console.log(`│   - ID original: ${participant.id}, admin: ${participant.admin}, realId: ${realId}`)
+        
+        if (realId === botNumber) {
+          botIsAdmin = !!participant.admin
+          console.log(`│     → ¡Es el bot! admin: ${participant.admin}`)
+        }
+        if (realId === sender) {
+          userIsAdmin = !!participant.admin
+          console.log(`│     → ¡Es el usuario! admin: ${participant.admin}`)
+        }
+      }
+      
       console.log(`│ Bot admin: ${botIsAdmin ? 'SÍ' : 'NO'}`)
       console.log('╰────────────────────────────···')
       
-      // Verificar que el bot sea admin
       if (!botIsAdmin) {
-        console.log(`❌ El bot NO es admin en este grupo.`)
         return m.reply('《✧》 El bot no es administrador en este grupo. No puedo ejecutar el comando.')
       }
       
-      console.log(`✅ El bot SÍ es admin en este grupo. Continuando...`)
-      
-      // Verificar si el usuario ya es admin
       if (userIsAdmin) {
-        console.log(`ℹ️ El usuario ya es admin.`)
         return client.sendMessage(m.chat, { 
           text: `Usted ya tiene admin, mi señor.`, 
           mentions: [sender] 
         }, { quoted: m })
       }
       
-      // Proceder a promover
-      console.log(`🚀 Promoviendo a ${sender}...`)
       await client.groupParticipantsUpdate(m.chat, [sender], 'promote')
       
-      console.log(`✅ Promoción exitosa.`)
       await client.sendMessage(m.chat, { 
         text: `A sus órdenes, @${sender.split('@')[0]}`, 
         mentions: [sender] 
