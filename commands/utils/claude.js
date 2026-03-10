@@ -4,7 +4,6 @@ export default {
   command: ['claude'],
   category: 'utils',
   run: async (client, m, args, command, text, prefix) => {
-
     if (!text) {
         return m.reply(`✎ Escriba una *petición* para que *Claude* le responda.`)
     }
@@ -12,10 +11,9 @@ export default {
     try {
       const apiUrl = `${api.url}/ai/claude?text=${encodeURIComponent(text)}&key=${api.key}`
 
-     const txc = `✎ *Claude* está procesando tu respuesta...`;
       const { key } = await client.sendMessage(
         m.chat,
-        { text: txc },
+        { text: `✎ *Claude* está procesando tu respuesta...` },
         { quoted: m },
       )
 
@@ -29,7 +27,8 @@ export default {
       await client.sendMessage(m.chat, { text: replyText, edit: key })
 
     } catch (e) {
-      await m.reply(`${msgglobal}`)
+      // Aquí reemplazamos msgglobal por un mensaje construido al momento
+      await m.reply(`《✧》 Error al ejecutar el comando *${prefix + command}*. Por favor intenta nuevamente.\n[Error: ${e.message}]`)
     }
   }
 }
