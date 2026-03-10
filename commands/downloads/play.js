@@ -3,9 +3,15 @@ import fetch from 'node-fetch'
 import { getBuffer } from '../../lib/message.js'
 
 const isYTUrl = (url) => /^(https?:\/\/)?(www\.)?(youtube\.com|youtu\.be)\/.+$/i.test(url)
+async function getVideoInfo(query, videoMatch) {
+  const search = await yts(query)
+  if (!search.all.length) return null
+  const videoInfo = videoMatch ? search.videos.find(v => v.videoId === videoMatch[1]) || search.all[0] : search.all[0]
+  return videoInfo || null
+}
 
 export default {
-  command: ['play2', 'mp4', 'ytmp4', 'ytvideo', 'playvideo'],
+  command: ['play', 'mp3', 'ytmp3', 'ytaudio', 'playaudio'],
   category: 'downloader',
   run: async (client, m, args, usedPrefix, command) => {
     try {
@@ -17,46 +23,46 @@ export default {
       const query = videoMatch ? 'https://youtu.be/' + videoMatch[1] : text
       let url = query, title = null, thumbBuffer = null
       try {
-        const search = await yts(query)
-        if (search.all.length) {
-          const videoInfo = videoMatch ? search.videos.find(v => v.videoId === videoMatch[1]) || search.all[0] : search.all[0]
-          if (videoInfo) {
-            url = videoInfo.url
-            title = videoInfo.title
-            thumbBuffer = await getBuffer(videoInfo.image)
-            const vistas = (videoInfo.views || 0).toLocaleString()
-            const canal = videoInfo.author?.name || 'Desconocido'
-            const infoMessage = `➩ Descargando › *${title}*
+        const videoInfo = await getVideoInfo(query, videoMatch)
+        if (videoInfo) {
+          url = videoInfo.url
+          title = videoInfo.title
+          thumbBuffer = await getBuffer(videoInfo.image)
+          const vistas = (videoInfo.views || 0).toLocaleString()
+          const canal = videoInfo.author?.name || 'Desconocido'
+          const infoMessage = `➩ Descargando › ${title}
 
 > ❖ Canal › *${canal}*
 > ⴵ Duración › *${videoInfo.timestamp || 'Desconocido'}*
 > ❀ Vistas › *${vistas}*
 > ✩ Publicado › *${videoInfo.ago || 'Desconocido'}*
 > ❒ Enlace › *${url}*`
-            await client.sendMessage(m.chat, { image: thumbBuffer, caption: infoMessage }, { quoted: m })
-          }
+          await client.sendMessage(m.chat, { image: thumbBuffer, caption: infoMessage }, { quoted: m })
         }
       } catch (err) {
       }
-      const video = await getVideoFromApis(url)
-      if (!video?.url) {
-        return m.reply('《✧》 No se pudo descargar el *video*, intenta más tarde.')
+      const audio = await getAudioFromApis(url)
+      if (!audio?.url) {
+        return m.reply('《✧》 No se pudo descargar el *audio*, intenta más tarde.')
       }
-      const videoBuffer = await getBuffer(video.url)
-      await client.sendMessage(m.chat, { video: videoBuffer, fileName: `${title || 'video'}.mp4`, mimetype: 'video/mp4' }, { quoted: m })
+      const audioBuffer = await getBuffer(audio.url)
+      await client.sendMessage(m.chat, { audio: audioBuffer, fileName: `${title || 'audio'}.mp3`, mimetype: 'audio/mpeg' }, { quoted: m })
     } catch (e) {
       await m.reply(`> An unexpected error occurred while executing command *${usedPrefix + command}*. Please try again or contact support if the issue persists.\n> [Error: *${e.message}*]`)
     }
   }
 }
 
-async function getVideoFromApis(url) {
+async function getAudioFromApis(url) {
   const apis = [
-    { api: 'Adonix', endpoint: `${global.APIs.adonix.url}/download/ytvideo?apikey=${global.APIs.adonix.key}&url=${encodeURIComponent(url)}`, extractor: res => res?.data?.url },    
-    { api: 'Vreden', endpoint: `${global.APIs.vreden.url}/api/v1/download/youtube/video?url=${encodeURIComponent(url)}&quality=360`, extractor: res => res.result?.download?.url },
-    { api: 'Stellar', endpoint: `${global.APIs.stellar.url}/dl/ytdl?url=${encodeURIComponent(url)}&format=mp4&key=${global.APIs.stellar.key}`, extractor: res => res.result?.download },
-    { api: 'Nekolabs', endpoint: `${global.APIs.nekolabs.url}/downloader/youtube/v1?url=${encodeURIComponent(url)}&format=360`, extractor: res => res.result?.downloadUrl },
-    { api: 'Vreden v2', endpoint: `${global.APIs.vreden.url}/api/v1/download/play/video?query=${encodeURIComponent(url)}`, extractor: res => res.result?.download?.url }
+    { api: 'Adonix', endpoint: `${global.APIs.adonix.url}/download/ytaudio?apikey=${global.APIs.adonix.key}&url=${encodeURIComponent(url)}`, extractor: res => res?.data?.url },    
+    { api: 'Ootaizumi', endpoint: `${global.APIs.ootaizumi.url}/downloader/youtube/play?query=${encodeURIComponent(url)}`, extractor: res => res.result?.download },
+    { api: 'Vreden', endpoint: `${global.APIs.vreden.url}/api/v1/download/youtube/audio?url=${encodeURIComponent(url)}&quality=256`, extractor: res => res.result?.download?.url },
+    { api: 'Stellar', endpoint: `${global.APIs.stellar.url}/dl/ytdl?url=${encodeURIComponent(url)}&format=mp3&key=${global.APIs.stellar.key}`, extractor: res => res.result?.download },
+    { api: 'Ootaizumi v2', endpoint: `${global.APIs.ootaizumi.url}/downloader/youtube?url=${encodeURIComponent(url)}&format=mp3`, extractor: res => res.result?.download },
+    { api: 'Vreden v2', endpoint: `${global.APIs.vreden.url}/api/v1/download/play/audio?query=${encodeURIComponent(url)}`, extractor: res => res.result?.download?.url },
+    { api: 'Nekolabs', endpoint: `${global.APIs.nekolabs.url}/downloader/youtube/v1?url=${encodeURIComponent(url)}&format=mp3`, extractor: res => res.result?.downloadUrl },
+    { api: 'Nekolabs v2', endpoint: `${global.APIs.nekolabs.url}/downloader/youtube/play/v1?q=${encodeURIComponent(url)}`, extractor: res => res.result?.downloadUrl }
   ]
 
   for (const { api, endpoint, extractor } of apis) {
