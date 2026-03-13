@@ -102,7 +102,6 @@ export default {
       const nRetador = obtenerNombre(retador)
       const nOponente = obtenerNombre(oponente)
 
-      // Mensaje con la decoración solicitada
       const mensaje = `╭┈ࠢ͜┅ࠦ͜͜
 │ 𐔌 RETO DE CARRERA
 │
@@ -126,7 +125,6 @@ export default {
       const quienAcepta = await obtenerJidReal(m.sender, m.text, m.chat)
       const reto = chat.retoPendiente
 
-      // Verificación: solo el oponente puede aceptar
       if (quienAcepta !== reto.oponente) {
         const nombreOponente = obtenerNombre(reto.oponente)
         return m.reply(`ꕥ Solo ${nombreOponente} puede aceptar.`)
@@ -180,13 +178,12 @@ async function iniciarCarrera(client, chatId, reto, monedas, dbData) {
   const buildPista = () => {
     return jugadores.map(j => {
       if (j.pos >= meta) {
-        return `🐎 ${j.nombre}\n${'-'.repeat(meta)}🐎🏁`
+        return `${j.nombre}\n${'-'.repeat(meta)}🐎🏁`
       }
-      return `🐎 ${j.nombre}\n${'-'.repeat(j.pos)}🐎${'-'.repeat(meta - j.pos - 1)}🏁`
+      return `${j.nombre}\n${'-'.repeat(j.pos)}🐎${'-'.repeat(meta - j.pos - 1)}🏁`
     }).join('\n\n')
   }
 
-  // Mensaje inicial con la decoración
   const textoInicial = `╭┈ࠢ͜┅ࠦ͜͜
 │ 𐔌 CARRERA INICIADA
 │
@@ -199,31 +196,27 @@ ${buildPista()}
   chat.carreraActiva = true
 
   const intervalo = setInterval(async () => {
-    // Avance aleatorio para cada jugador
     jugadores.forEach(j => {
       if (j.pos < meta) {
         j.pos += Math.floor(Math.random() * 3) + 1
       }
     })
 
-    // Verificar si alguien llegó o pasó la meta
     const jugadoresEnMeta = jugadores.filter(j => j.pos >= meta)
 
     if (jugadoresEnMeta.length === 2) {
-      // Empate
       clearInterval(intervalo)
       chat.carreraActiva = false
 
-      // Devolver apuestas
       chat.users[retadorId].coins += apuesta
       chat.users[oponenteId].coins += apuesta
 
       const textoEmpate = `╭┈ࠢ͜┅ࠦ͜͜
-│ 𐔌 CARRERA EMPATADA
+│ 𐔌 EMPATE
 │
 ${buildPista()}
 │
-│ ⚖️ Nadie gana, se devuelven las apuestas.
+│ ❏ Se devuelven ${apuesta} ${monedas} a cada uno.
 ╰────────────`
 
       await client.sendMessage(chatId, { text: textoEmpate, edit: key })
@@ -231,7 +224,6 @@ ${buildPista()}
     }
 
     if (jugadoresEnMeta.length === 1) {
-      // Hay un ganador
       clearInterval(intervalo)
       chat.carreraActiva = false
 
@@ -243,7 +235,7 @@ ${buildPista()}
 │
 ${buildPista()}
 │
-│ 🏆 Ganador: @${ganador.id.split('@')[0]}
+│ 𐔌 Ganador: @${ganador.id.split('@')[0]}
 │ Premio: +${premio} ${monedas}
 ╰────────────`
 
@@ -251,7 +243,6 @@ ${buildPista()}
       return
     }
 
-    // Actualizar pista
     const textoActualizado = `╭┈ࠢ͜┅ࠦ͜͜
 │ 𐔌 CARRERA
 │
@@ -263,6 +254,5 @@ ${buildPista()}
     await client.sendMessage(chatId, { text: textoActualizado, edit: key })
   }, 2000)
 
-  // Guardar intervalo para limpieza si es necesario
   global.carreraIntervalos[chatId] = intervalo
 }
