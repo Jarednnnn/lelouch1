@@ -86,8 +86,9 @@ export default {
       }, 60000)
       chat.retoPendiente.timeout = timeout
 
-      const retadorName = global.db.data.users?.[m.sender]?.name || m.sender.split('@')[0]
-      const oponenteName = global.db.data.users?.[opponentId]?.name || opponentId.split('@')[0]
+      // Obtener nombres (mostrar solo dígitos si no hay nombre personalizado)
+      const retadorName = global.db.data.users?.[m.sender]?.name || m.sender.split('@')[0].replace(/\D/g, '')
+      const oponenteName = global.db.data.users?.[opponentId]?.name || opponentId.split('@')[0].replace(/\D/g, '')
 
       const mensajeReto = `╭┈ࠢ͜┅ࠦ͜͜╾݊͜─ׄ͜─֬͜─֟͜─֫͜─ׄ͜─݊͜┅ࠡ͜͜┈࠭͜
 │        𐔌 RETO DE CARRERA 𐦯
@@ -113,9 +114,12 @@ export default {
 
       const reto = chat.retoPendiente
 
-      // Verificar que el usuario que acepta es el oponente
-      if (m.sender !== reto.oponente) {
-        const oponenteName = global.db.data.users?.[reto.oponente]?.name || reto.oponente.split('@')[0]
+      // Normalizar números: extraer solo dígitos para comparar
+      const senderNumber = m.sender.split('@')[0].replace(/\D/g, '')
+      const opponentNumber = reto.oponente.split('@')[0].replace(/\D/g, '')
+
+      if (senderNumber !== opponentNumber) {
+        const oponenteName = global.db.data.users?.[reto.oponente]?.name || reto.oponente.split('@')[0].replace(/\D/g, '')
         return m.reply(`ꕥ Solo *${oponenteName}* puede aceptar este reto.`)
       }
 
@@ -160,9 +164,9 @@ async function iniciarCarrera(client, chatId, userIdAceptante, reto, monedas, db
   const apuesta = reto.apuestaRetador
   const premioTotal = apuesta * 2
 
-  // Obtener nombres
-  const nombreRetador = dbData.users?.[retadorId]?.name || retadorId.split('@')[0]
-  const nombreOponente = dbData.users?.[oponenteId]?.name || oponenteId.split('@')[0]
+  // Obtener nombres (solo dígitos si no hay nombre)
+  const nombreRetador = dbData.users?.[retadorId]?.name || retadorId.split('@')[0].replace(/\D/g, '')
+  const nombreOponente = dbData.users?.[oponenteId]?.name || oponenteId.split('@')[0].replace(/\D/g, '')
 
   const longitudMeta = 15
   let terminada = false
