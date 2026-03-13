@@ -20,18 +20,30 @@ export default {
     if (command === 'carrera') {
       if (chat.carreraActiva) return m.reply('ꕥ Ya hay una carrera en curso.')
 
-      // Obtener mencionado o citado
       const mentionedJid = m.mentionedJid
       const rawOpponent = mentionedJid[0] || (m.quoted ? m.quoted.sender : null)
       if (!rawOpponent) return m.reply(`ꕥ Menciona a alguien.\n> Ejemplo: *${usedPrefix}carrera @usuario 200*`)
 
-      // Resolver a JID real
+      // Intentamos resolver a JID real, pero si falla, guardamos lo que tengamos (rawOpponent)
+      // También guardamos rawOpponent por si acaso
       const retador = await resolveLidToRealJid(m.sender, client, m.chat)
-      const oponente = await resolveLidToRealJid(rawOpponent, client, m.chat)
+      let oponente = await resolveLidToRealJid(rawOpponent, client, m.chat)
+      
+      // Si oponente sigue siendo el mismo rawOpponent (no se pudo resolver), intentamos buscar en metadata directamente
+      if (oponente === rawOpponent || !oponente.endsWith('@s.whatsapp.net')) {
+        try {
+          const metadata = await client.groupMetadata(m.chat)
+          const participant = metadata.participants.find(p => 
+            p.id === rawOpponent || p.lid === rawOpponent || p.id.split('@')[0] === rawOpponent.split('@')[0]
+          )
+          if (participant) {
+            oponente = participant.id // Esto debería ser JID real
+          }
+        } catch (e) {}
+      }
 
       if (retador === oponente) return m.reply('ꕥ No puedes jugar contra ti mismo.')
 
-      // Extraer apuesta
       let apuesta = parseInt(args.find(a => !isNaN(a.replace(/[,.]/g, '')) && parseInt(a.replace(/[,.]/g, '')) >= 100)?.replace(/[,.]/g, ''))
       if (!apuesta) return m.reply(`ꕥ Apuesta mínima: 100 ${monedas}.`)
 
@@ -47,11 +59,9 @@ export default {
         } else return m.reply('ꕥ Hay un reto pendiente. Espera un momento.')
       }
 
-      // Descontar monedas al retador y guardar reto
       chat.users[retador].coins -= apuesta
-      chat.retoPendiente = { retador, oponente, apuesta, expiracion: Date.now() + 60000 }
+      chat.retoPendiente = { retador, oponente, rawOponente: rawOpponent, apuesta, expiracion: Date.now() + 60000 }
 
-      // Timeout de expiración
       global.carreraTimeouts[m.chat] = setTimeout(() => {
         if (chat.retoPendiente && chat.retoPendiente.retador === retador) {
           if (chat.users[retador]) chat.users[retador].coins += apuesta
@@ -60,11 +70,9 @@ export default {
         }
       }, 60000)
 
-      // Obtener nombres para mostrar
       const nRetador = global.db.data.users[retador]?.name || retador.split('@')[0]
-      const nOponente = global.db.data.users[oponente]?.name || oponente.split('@')[0]
+      const nOponente = global.db.data.users[oponente]?.name || oponente.split('@')[0] || rawOpponent.split('@')[0]
 
-      // Mensaje con decoración
       const mensaje = `「✿」 *${nRetador}*, ¿confirmas retar a *${nOponente}*?\n\n❏ Apuesta: *${apuesta} ${monedas}* cada uno\n\n✐ Para aceptar escribe *${usedPrefix}aceptarcarrera*`
       await client.sendMessage(m.chat, { text: mensaje, mentions: [retador, oponente] }, { quoted: m })
     }
@@ -73,12 +81,34 @@ export default {
     else if (command === 'aceptarcarrera') {
       if (!chat.retoPendiente) return m.reply('ꕥ No hay retos pendientes.')
 
-      // Resolver el ID del que acepta
       const quienAcepta = await resolveLidToRealJid(m.sender, client, m.chat)
       const reto = chat.retoPendiente
 
-      // Comparar directamente los JIDs completos
-      if (quienAcepta !== reto.oponente) {
+      // Función para verificar si quienAcepta es el oponente correcto
+      const esOponenteValido = async () => {
+        // Si el oponente guardado ya es un JID y coincide directamente
+        if (reto.oponente.endsWith('@s.whatsapp.net') && reto.oponente === quienAcepta) return true
+        
+        // Si el oponente guardado es un LID, intentamos resolverlo ahora
+        const oponenteResuelto = await resolveLidToRealJid(reto.oponente, client, m.chat)
+        if (oponenteResuelto.endsWith('@s.whatsapp.net') && oponenteResuelto === quienAcepta) return true
+        
+        // Último recurso: buscar en metadata del grupo
+        try {
+          const metadata = await client.groupMetadata(m.chat)
+          // Buscar si quienAcepta está en participantes y su LID coincide con el guardado
+          const participante = metadata.participants.find(p => p.id === quienAcepta)
+          if (participante && (participante.lid === reto.oponente || participante.id === reto.oponente)) return true
+          
+          // También buscar inversamente: si el oponente guardado es un LID, ver si algún participante tiene ese LID
+          const participantePorLid = metadata.participants.find(p => p.lid === reto.oponente)
+          if (participantePorLid && participantePorLid.id === quienAcepta) return true
+        } catch (e) {}
+        
+        return false
+      }
+
+      if (!(await esOponenteValido())) {
         const nombreOponente = global.db.data.users[reto.oponente]?.name || reto.oponente.split('@')[0]
         return m.reply(`ꕥ Solo *${nombreOponente}* puede aceptar este reto.`)
       }
