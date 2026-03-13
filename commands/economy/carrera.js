@@ -1,5 +1,3 @@
-import { resolveLidToRealJid } from "../../lib/utils.js"
-
 // Almacén global de timeouts para poder cancelarlos al aceptar
 global.carreraTimeouts = global.carreraTimeouts || {}
 
@@ -16,8 +14,29 @@ export default {
       return m.reply(`ꕥ Los comandos de *Economía* están desactivados en este grupo.\n\nUn *administrador* puede activarlos con el comando:\n» *${usedPrefix}economy on*`)
     }
 
-    // Función vital para limpiar IDs (elimina puertos :1, :2 y asegura el formato)
-    const cleanId = (id) => id ? id.split('@')[0].split(':')[0] + '@s.whatsapp.net' : ''
+    // Función simple para limpiar basura de los IDs
+    const cleanId = (id) => id ? id.split('@')[0].split(':')[0] : ''
+
+    // 🌟 EL TRADUCTOR DEFINITIVO DE LIDs A NÚMEROS REALES 🌟
+    const getRealJid = async (idToCheck) => {
+      if (!idToCheck) return null
+      let numId = cleanId(idToCheck)
+      try {
+        const meta = await client.groupMetadata(m.chat)
+        // Buscamos si el ID raro coincide con algún participante (ya sea por su número o por su LID oculto)
+        const participante = meta.participants.find(p => 
+          p.id.includes(numId) || (p.lid && p.lid.includes(numId))
+        )
+        if (participante) {
+          // Si lo encuentra, SIEMPRE devuelve el número de teléfono real (+58...)
+          return cleanId(participante.id) + '@s.whatsapp.net'
+        }
+      } catch (e) {
+        console.log("Error leyendo metadata del grupo")
+      }
+      // Si falla, devuelve lo que encontró limpio
+      return numId + '@s.whatsapp.net'
+    }
 
     // =================== COMANDO #carrera ===================
     if (command === 'carrera') {
@@ -26,22 +45,18 @@ export default {
       }
 
       // Obtener mención o quoted
-      let opponentLid = m.mentionedJid?.[0]
-      if (!opponentLid) {
+      let rawOpponent = m.mentionedJid?.[0]
+      if (!rawOpponent) {
         if (m.quoted?.sender) {
-          opponentLid = m.quoted.sender
+          rawOpponent = m.quoted.sender
         } else {
           return m.reply(`ꕥ Debes mencionar al usuario con quien quieres competir.\n> Ejemplo: *${usedPrefix}carrera @usuario 200*`)
         }
       }
 
-      // Resolver LID a JID real y LIMPIARLOS inmediatamente
-      let rawRetador = await resolveLidToRealJid(m.sender, client, m.chat)
-      let rawOpponent = await resolveLidToRealJid(opponentLid, client, m.chat)
-      
-      // Si el resolver falla, usamos el original, pero siempre limpio
-      const retadorReal = cleanId(rawRetador || m.sender)
-      const opponentReal = cleanId(rawOpponent || opponentLid)
+      // 🚨 AQUÍ TRADUCIMOS LOS IDs ANTES DE HACER NADA 🚨
+      const retadorReal = await getRealJid(m.sender)
+      const opponentReal = await getRealJid(rawOpponent)
 
       if (!opponentReal) {
         return m.reply('ꕥ No se pudo identificar al usuario mencionado.')
@@ -65,7 +80,7 @@ export default {
         return m.reply(`ꕥ Apuesta inválida. Debe ser un número mayor o igual a 100 ${monedas}.`)
       }
 
-      // Asegurar que existan los registros de usuario
+      // Asegurar que existan los registros de usuario (ahora sí, usando los números de verdad)
       if (!chat.users[retadorReal]) chat.users[retadorReal] = { coins: 0 }
       if (!chat.users[opponentReal]) chat.users[opponentReal] = { coins: 0 }
 
@@ -93,10 +108,10 @@ export default {
       // Restar apuesta al retador
       chat.users[retadorReal].coins -= apuesta
 
-      // Crear reto pendiente
+      // Crear reto pendiente guardando LOS NÚMEROS REALES
       const reto = {
         retador: retadorReal,
-        oponente: opponentReal, // Guardamos el ID limpio
+        oponente: opponentReal,
         apuestaRetador: apuesta,
         expiracion: Date.now() + 60000 
       }
@@ -113,6 +128,7 @@ export default {
         delete global.carreraTimeouts[m.chat]
       }, 60000)
 
+      // Obtener nombres para mostrar (ahora sí debería encontrar el nombre del oponente)
       const retadorName = global.db.data.users?.[retadorReal]?.name || retadorReal.split('@')[0]
       const oponenteName = global.db.data.users?.[opponentReal]?.name || opponentReal.split('@')[0]
 
@@ -139,11 +155,10 @@ export default {
 
       const reto = chat.retoPendiente
 
-      // Resolver y LIMPIAR el ID del que acepta
-      let rawSender = await resolveLidToRealJid(m.sender, client, m.chat)
-      const senderReal = cleanId(rawSender || m.sender)
+      // Traducimos el ID de quien acepta por si acaso
+      const senderReal = await getRealJid(m.sender)
 
-      // Comparación exacta y limpia
+      // Comparación exacta con el número real
       if (senderReal !== reto.oponente) {
         const oponenteName = global.db.data.users?.[reto.oponente]?.name || reto.oponente.split('@')[0]
         return m.reply(`ꕥ Solo *${oponenteName}* puede aceptar este reto.`)
