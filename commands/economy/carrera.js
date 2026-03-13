@@ -16,44 +16,55 @@ export default {
       return m.reply(`ꕥ Los comandos de *Economía* están desactivados.\n» *${usedPrefix}economy on*`)
     }
 
-    // --- FUNCIÓN PARA EXTRAER NÚMERO DE TELÉFONO DE UN ID O MENCIÓN ---
-    const extraerNumero = (id) => {
-      if (!id) return null
-      // Si es un JID, extraemos la parte antes del @
-      let parte = id.split('@')[0]
-      // Eliminamos cualquier carácter no numérico (espacios, guiones, +)
-      return parte.replace(/\D/g, '')
+    // --- FUNCIÓN PARA EXTRAER NÚMERO DE TELÉFONO DEL TEXTO (ej: +58 426-6546654) ---
+    const extraerNumeroDeTexto = (texto) => {
+      if (!texto) return null
+      // Busca un patrón de número de teléfono: puede tener +, espacios, guiones
+      const match = texto.match(/[\+\d][\d\s\-\(\)]{7,}/g)
+      if (match) {
+        // Toma el primero y elimina todo excepto dígitos
+        return match[0].replace(/\D/g, '')
+      }
+      return null
     }
 
-    // --- FUNCIÓN PARA OBTENER UN JID REAL A PARTIR DE CUALQUIER FORMATO ---
-    const obtenerJidReal = async (id, grupoId) => {
+    // --- FUNCIÓN PARA OBTENER JID REAL DE FORMA SEGURA ---
+    const obtenerJidReal = async (id, textoCompleto, grupoId) => {
       if (!id) return null
+      
       // Si ya es un JID válido, lo devolvemos
       if (id.endsWith('@s.whatsapp.net')) return id
 
-      // Intentar resolver con la función de utils (puede devolver JID o LID)
-      const resuelto = await resolveLidToRealJid(id, client, grupoId)
-      if (resuelto && resuelto.endsWith('@s.whatsapp.net')) return resuelto
+      // 1. Intentar con resolveLidToRealJid
+      let jid = await resolveLidToRealJid(id, client, grupoId)
+      if (jid && jid.endsWith('@s.whatsapp.net')) return jid
 
-      // Si no, extraemos el número y construimos un JID
-      const numero = extraerNumero(id)
-      if (numero) return numero + '@s.whatsapp.net'
+      // 2. Si falla, intentar extraer número del texto original
+      const numero = extraerNumeroDeTexto(textoCompleto)
+      if (numero) {
+        const jidConstruido = numero + '@s.whatsapp.net'
+        // Verificar que el número sea plausible (longitud mínima)
+        if (numero.length >= 10) return jidConstruido
+      }
 
-      // Último recurso: devolver el original (probablemente cause error)
-      return id
+      // 3. Último recurso: construir a partir del ID (quitando todo no numérico)
+      const idLimpio = id.replace(/\D/g, '')
+      if (idLimpio.length >= 10) return idLimpio + '@s.whatsapp.net'
+
+      return null
     }
 
-    // --- FUNCIÓN PARA OBTENER NOMBRE LEGIBLE (con formato internacional) ---
+    // --- FUNCIÓN PARA OBTENER NOMBRE LEGIBLE ---
     const obtenerNombre = (jid) => {
       if (!jid) return 'Desconocido'
-      // Buscar en base de datos global
       const nombreDB = global.db.data.users[jid]?.name
       if (nombreDB) return nombreDB
-      // Formatear el número: +58 426 654 6654 (ejemplo)
       const numero = jid.split('@')[0]
-      // Agrupamos dígitos para que sea legible
-      const formateado = numero.replace(/(\d{2})(\d{3})(\d{3})(\d{4})/, '+$1 $2 $3 $4')
-      return formateado
+      // Formato: +58 426 654 6654 (ajusta según tu país)
+      if (numero.length >= 10) {
+        return numero.replace(/(\d{2})(\d{3})(\d{3})(\d{4})/, '+$1 $2 $3 $4')
+      }
+      return numero
     }
 
     // =================== COMANDO #carrera ===================
@@ -65,14 +76,17 @@ export default {
       const rawOpponent = mentionedJid?.[0] || m.quoted?.sender
       if (!rawOpponent) return m.reply(`ꕥ Menciona a alguien.\n> Ejemplo: *${usedPrefix}carrera @usuario 200*`)
 
-      // Obtener JID real del retador y oponente
-      const retador = await obtenerJidReal(m.sender, m.chat)
-      const oponente = await obtenerJidReal(rawOpponent, m.chat)
+      // El texto completo del mensaje (para extraer número si es necesario)
+      const textoCompleto = m.text
 
-      if (!oponente) return m.reply('ꕥ No se pudo identificar al oponente.')
+      // Obtener JID real del retador y oponente
+      const retador = await obtenerJidReal(m.sender, textoCompleto, m.chat)
+      const oponente = await obtenerJidReal(rawOpponent, textoCompleto, m.chat)
+
+      if (!retador || !oponente) return m.reply('ꕥ No se pudo identificar a los participantes.')
       if (retador === oponente) return m.reply('ꕥ No puedes jugar contra ti mismo.')
 
-      // Extraer apuesta
+      // Extraer apuesta (el último argumento numérico)
       let apuesta = parseInt(args.find(a => !isNaN(a.replace(/[,.]/g, '')) && parseInt(a.replace(/[,.]/g, '')) >= 100)?.replace(/[,.]/g, ''))
       if (!apuesta) return m.reply(`ꕥ Apuesta mínima: 100 ${monedas}.`)
 
@@ -101,7 +115,7 @@ export default {
         }
       }, 60000)
 
-      // Obtener nombres para mostrar (usando los JIDs reales)
+      // Obtener nombres para mostrar
       const nRetador = obtenerNombre(retador)
       const nOponente = obtenerNombre(oponente)
 
@@ -115,7 +129,7 @@ export default {
       if (!chat.retoPendiente) return m.reply('ꕥ No hay retos pendientes.')
 
       // Obtener JID real del que acepta
-      const quienAcepta = await obtenerJidReal(m.sender, m.chat)
+      const quienAcepta = await obtenerJidReal(m.sender, m.text, m.chat)
       const reto = chat.retoPendiente
 
       // Comparar directamente los JIDs reales
@@ -147,13 +161,15 @@ async function iniciarCarrera(client, chatId, oponenteId, reto, monedas, dbData)
   const retadorId = reto.retador
   const premio = reto.apuesta * 2
 
-  // Función para obtener nombre legible (reutilizada)
   const obtenerNombre = (jid) => {
     if (!jid) return 'Desconocido'
     const nombreDB = dbData.users[jid]?.name
     if (nombreDB) return nombreDB
     const numero = jid.split('@')[0]
-    return numero.replace(/(\d{2})(\d{3})(\d{3})(\d{4})/, '+$1 $2 $3 $4')
+    if (numero.length >= 10) {
+      return numero.replace(/(\d{2})(\d{3})(\d{3})(\d{4})/, '+$1 $2 $3 $4')
+    }
+    return numero
   }
 
   const nRetador = obtenerNombre(retadorId)
