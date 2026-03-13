@@ -8,7 +8,6 @@ export default {
   category: 'economy',
   run: async (client, m, args, usedPrefix, command) => {
     const chat = global.db.data.chats[m.chat]
-    const user = chat.users[m.sender]
     const botId = client.user.id.split(':')[0] + '@s.whatsapp.net'
     const monedas = global.db.data.settings[botId].currency
 
@@ -33,13 +32,15 @@ export default {
         }
       }
 
-      // Resolver LID a JID real
-      const opponentId = await resolveLidToRealJid(opponentLid, client, m.chat)
-      if (!opponentId) {
+      // Resolver LID a JID real (sin sufijos de dispositivo)
+      const retadorReal = await resolveLidToRealJid(m.sender, client, m.chat)
+      const opponentReal = await resolveLidToRealJid(opponentLid, client, m.chat)
+
+      if (!opponentReal) {
         return m.reply('ꕥ No se pudo identificar al usuario mencionado.')
       }
 
-      if (opponentId === m.sender) {
+      if (retadorReal === opponentReal) {
         return m.reply('ꕥ No puedes retarte a ti mismo. Menciona a otro usuario.')
       }
 
@@ -57,16 +58,17 @@ export default {
         return m.reply(`ꕥ Apuesta inválida. Debe ser un número mayor o igual a 100 ${monedas}.`)
       }
 
-      // Inicializar oponente si no existe
-      if (!chat.users[opponentId]) chat.users[opponentId] = { coins: 0 }
+      // Asegurar que existan los registros de usuario (usando JIDs resueltos)
+      if (!chat.users[retadorReal]) chat.users[retadorReal] = { coins: 0 }
+      if (!chat.users[opponentReal]) chat.users[opponentReal] = { coins: 0 }
 
-      if (user.coins < apuesta) {
+      if (chat.users[retadorReal].coins < apuesta) {
         return m.reply(`ꕥ No tienes suficientes ${monedas}. Necesitas *${apuesta} ${monedas}*.`)
       }
 
       // Limpiar reto expirado previo (si existe)
       if (chat.retoPendiente) {
-        // Si hay un timeout asociado a este chat, lo cancelamos
+        // Cancelar timeout asociado
         if (global.carreraTimeouts[m.chat]) {
           clearTimeout(global.carreraTimeouts[m.chat])
           delete global.carreraTimeouts[m.chat]
@@ -84,22 +86,22 @@ export default {
       }
 
       // Restar apuesta al retador
-      user.coins -= apuesta
+      chat.users[retadorReal].coins -= apuesta
 
-      // Crear reto pendiente (SIN incluir el timeout)
+      // Crear reto pendiente con JIDs resueltos
       const reto = {
-        retador: m.sender,
-        oponente: opponentId,
+        retador: retadorReal,
+        oponente: opponentReal,
         apuestaRetador: apuesta,
         expiracion: Date.now() + 60000 // 60 segundos
       }
       chat.retoPendiente = reto
 
-      // Programar expiración y guardar el timeout en el objeto global
+      // Programar expiración usando el JID real del retador
       global.carreraTimeouts[m.chat] = setTimeout(() => {
-        if (chat.retoPendiente && chat.retoPendiente.retador === m.sender) {
-          if (chat.users[m.sender]) {
-            chat.users[m.sender].coins += apuesta
+        if (chat.retoPendiente && chat.retoPendiente.retador === retadorReal) {
+          if (chat.users[retadorReal]) {
+            chat.users[retadorReal].coins += apuesta
           }
           delete chat.retoPendiente
           client.sendMessage(m.chat, { text: 'ꕥ El reto de carrera ha expirado por falta de respuesta.' })
@@ -108,8 +110,8 @@ export default {
       }, 60000)
 
       // Obtener nombres para mostrar
-      const retadorName = global.db.data.users?.[m.sender]?.name || m.sender.split('@')[0]
-      const oponenteName = global.db.data.users?.[opponentId]?.name || opponentId.split('@')[0]
+      const retadorName = global.db.data.users?.[retadorReal]?.name || retadorReal.split('@')[0]
+      const oponenteName = global.db.data.users?.[opponentReal]?.name || opponentReal.split('@')[0]
 
       const mensajeReto = `╭┈ࠢ͜┅ࠦ͜͜╾݊͜─ׄ͜─֬͜─֟͜─֫͜─ׄ͜─݊͜┅ࠡ͜͜┈࠭͜
 │        𐔌 RETO DE CARRERA 𐦯
@@ -134,15 +136,12 @@ export default {
 
       const reto = chat.retoPendiente
 
-      // Obtener el JID real del usuario que ejecuta el comando
+      // Resolver JID real del usuario que ejecuta el comando
       const senderReal = await resolveLidToRealJid(m.sender, client, m.chat)
 
-      // Comparar solo la parte numérica (antes del @) para evitar problemas con sufijos
-      const senderNum = senderReal.split('@')[0]
-      const oponenteNum = reto.oponente.split('@')[0]
-
-      if (senderNum !== oponenteNum) {
-        const oponenteName = global.db.data.users?.[reto.oponente]?.name || oponenteNum
+      // Comparar directamente con el oponente almacenado (ya resuelto)
+      if (senderReal !== reto.oponente) {
+        const oponenteName = global.db.data.users?.[reto.oponente]?.name || reto.oponente.split('@')[0]
         return m.reply(`ꕥ Solo *${oponenteName}* puede aceptar este reto.`)
       }
 
@@ -161,6 +160,10 @@ export default {
         return m.reply('ꕥ El reto de carrera ha expirado.')
       }
 
+      // Asegurar que el aceptante tenga registro de usuario
+      if (!chat.users[senderReal]) chat.users[senderReal] = { coins: 0 }
+      const user = chat.users[senderReal]
+
       // Verificar fondos del aceptante
       if (user.coins < reto.apuestaRetador) {
         return m.reply(`ꕥ No tienes suficientes ${monedas} para igualar la apuesta de *${reto.apuestaRetador} ${monedas}*.`)
@@ -178,8 +181,8 @@ export default {
       // Eliminar reto pendiente
       delete chat.retoPendiente
 
-      // Iniciar la carrera
-      await iniciarCarrera(client, m.chat, m.sender, reto, monedas, global.db.data)
+      // Iniciar la carrera (pasamos los JIDs resueltos ya incluidos en reto)
+      await iniciarCarrera(client, m.chat, senderReal, reto, monedas, global.db.data)
     }
   }
 }
