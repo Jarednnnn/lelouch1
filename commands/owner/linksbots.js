@@ -2,6 +2,8 @@
 import { fileURLToPath } from 'url';
 import path from 'path';
 import fs from 'fs';
+// <-- NUEVO: Importar la función de actualización de grupos
+import { updateBotGroups } from '../../lib/system/groupUpdater.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -84,6 +86,13 @@ export default {
 
     const botJid = targetBot.jid;
     const botName = targetBot.name;
+    
+    // <-- NUEVO: Si el bot consultado es el mismo que ejecuta el comando, actualizar grupos ahora
+    const currentBotJid = client.user.id.split(':')[0] + '@s.whatsapp.net';
+    if (botJid === currentBotJid) {
+      await updateBotGroups(client);
+    }
+
     const botData = global.db.data.settings[botJid];
 
     // Verificar si el bot tiene información de grupos guardada
