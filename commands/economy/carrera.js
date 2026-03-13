@@ -16,55 +16,44 @@ export default {
       return m.reply(`ꕥ Los comandos de *Economía* están desactivados.\n» *${usedPrefix}economy on*`)
     }
 
-    // --- FUNCIÓN SEGURA PARA OBTENER JID REAL ---
-    const obtenerJidRealSeguro = async (id, grupoId) => {
+    // --- FUNCIÓN PARA EXTRAER NÚMERO DE TELÉFONO DE UN ID O MENCIÓN ---
+    const extraerNumero = (id) => {
+      if (!id) return null
+      // Si es un JID, extraemos la parte antes del @
+      let parte = id.split('@')[0]
+      // Eliminamos cualquier carácter no numérico (espacios, guiones, +)
+      return parte.replace(/\D/g, '')
+    }
+
+    // --- FUNCIÓN PARA OBTENER UN JID REAL A PARTIR DE CUALQUIER FORMATO ---
+    const obtenerJidReal = async (id, grupoId) => {
       if (!id) return null
       // Si ya es un JID válido, lo devolvemos
       if (id.endsWith('@s.whatsapp.net')) return id
 
-      // Intentar resolver con la función de utils
-      let jid = await resolveLidToRealJid(id, client, grupoId)
-      // Si la resolución devolvió algo diferente al original y es JID, bien
-      if (jid !== id && jid.endsWith('@s.whatsapp.net')) return jid
+      // Intentar resolver con la función de utils (puede devolver JID o LID)
+      const resuelto = await resolveLidToRealJid(id, client, grupoId)
+      if (resuelto && resuelto.endsWith('@s.whatsapp.net')) return resuelto
 
-      // Si no, forzar búsqueda en metadata del grupo
-      try {
-        const metadata = await client.groupMetadata(grupoId)
-        const participante = metadata.participants.find(p => {
-          // Buscar por LID
-          if (p.lid && p.lid === id) return true
-          // Buscar por ID (que puede ser JID o LID)
-          if (p.id === id) return true
-          // Buscar por número de teléfono (sin @)
-          const phone = id.split('@')[0].replace(/\D/g, '')
-          if (p.phoneNumber && p.phoneNumber.includes(phone)) return true
-          return false
-        })
-        if (participante) {
-          // El participante puede tener id en formato JID o LID; aseguramos JID
-          if (participante.id.endsWith('@s.whatsapp.net')) return participante.id
-          // Si no, construir JID con el número de teléfono si existe
-          if (participante.phoneNumber) {
-            return participante.phoneNumber.replace(/\D/g, '') + '@s.whatsapp.net'
-          }
-        }
-      } catch (e) {
-        console.error('Error al obtener metadata:', e)
-      }
-      // Último recurso: devolver el original (aunque probablemente cause error)
+      // Si no, extraemos el número y construimos un JID
+      const numero = extraerNumero(id)
+      if (numero) return numero + '@s.whatsapp.net'
+
+      // Último recurso: devolver el original (probablemente cause error)
       return id
     }
 
-    // --- FUNCIÓN PARA OBTENER NOMBRE LEGIBLE ---
+    // --- FUNCIÓN PARA OBTENER NOMBRE LEGIBLE (con formato internacional) ---
     const obtenerNombre = (jid) => {
       if (!jid) return 'Desconocido'
       // Buscar en base de datos global
       const nombreDB = global.db.data.users[jid]?.name
       if (nombreDB) return nombreDB
-      // Si es un JID, formatear el número
+      // Formatear el número: +58 426 654 6654 (ejemplo)
       const numero = jid.split('@')[0]
-      // Formato internacional legible (opcional)
-      return numero.replace(/(\d{2})(\d{3})(\d{3})(\d{4})/, '+$1 $2 $3 $4')
+      // Agrupamos dígitos para que sea legible
+      const formateado = numero.replace(/(\d{2})(\d{3})(\d{3})(\d{4})/, '+$1 $2 $3 $4')
+      return formateado
     }
 
     // =================== COMANDO #carrera ===================
@@ -76,9 +65,9 @@ export default {
       const rawOpponent = mentionedJid?.[0] || m.quoted?.sender
       if (!rawOpponent) return m.reply(`ꕥ Menciona a alguien.\n> Ejemplo: *${usedPrefix}carrera @usuario 200*`)
 
-      // Resolver a JID real usando la función segura
-      const retador = await obtenerJidRealSeguro(m.sender, m.chat)
-      const oponente = await obtenerJidRealSeguro(rawOpponent, m.chat)
+      // Obtener JID real del retador y oponente
+      const retador = await obtenerJidReal(m.sender, m.chat)
+      const oponente = await obtenerJidReal(rawOpponent, m.chat)
 
       if (!oponente) return m.reply('ꕥ No se pudo identificar al oponente.')
       if (retador === oponente) return m.reply('ꕥ No puedes jugar contra ti mismo.')
@@ -112,7 +101,7 @@ export default {
         }
       }, 60000)
 
-      // Obtener nombres para mostrar
+      // Obtener nombres para mostrar (usando los JIDs reales)
       const nRetador = obtenerNombre(retador)
       const nOponente = obtenerNombre(oponente)
 
@@ -125,8 +114,8 @@ export default {
     else if (command === 'aceptarcarrera') {
       if (!chat.retoPendiente) return m.reply('ꕥ No hay retos pendientes.')
 
-      // Resolver el ID del que acepta usando la función segura
-      const quienAcepta = await obtenerJidRealSeguro(m.sender, m.chat)
+      // Obtener JID real del que acepta
+      const quienAcepta = await obtenerJidReal(m.sender, m.chat)
       const reto = chat.retoPendiente
 
       // Comparar directamente los JIDs reales
