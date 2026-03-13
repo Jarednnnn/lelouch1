@@ -10,77 +10,94 @@ const msToTime = (duration) => {
 export default {
   command: ['invertir', 'trading'],
   category: 'rpg',
-
-  run: async (client, m, args) => {
-    const db = global.db.data
-    const chatId = m.chat
-    const senderId = m.sender
+  run: async (client, m, args, usedPrefix, command) => {
+    const chat = global.db.data.chats[m.chat]
+    const user = chat.users[m.sender]
     const botId = client.user.id.split(':')[0] + '@s.whatsapp.net'
-    const botSettings = db.settings[botId]
-    const chatData = db.chats[chatId]
+    const botSettings = global.db.data.settings[botId]
+    const monedas = botSettings.currency || 'Monedas'
 
-    if (chatData.adminonly || !chatData.rpg)
-      return m.reply(mess.comandooff)
+    // Verificar si el comando está habilitado en el grupo
+    if (chat.adminonly || !chat.rpg) {
+      return m.reply(`ꕥ Los comandos de *RPG* están desactivados en este grupo.\n\nUn *administrador* puede activarlos con el comando:\n» *${usedPrefix}rpg on*`)
+    }
 
-    const user = chatData.users[senderId]
-    const currency = botSettings.currency || 'Monedas'
-
+    // Cooldown de 10 minutos
     const cooldown = 10 * 60 * 1000
     const now = Date.now()
     const remaining = (user.tradeCooldown || 0) - now
 
-    if (remaining > 0)
+    if (remaining > 0) {
       return m.reply(`《✧》 Debes esperar *${msToTime(remaining)}* antes de invertir nuevamente.`)
+    }
 
-    if (args.length !== 1)
-      return m.reply(`《✧》 Debes ingresar una cantidad de ${currency} para invertir en el mercado.`)
+    // Parsear la cantidad (puede estar en cualquier argumento)
+    let cantidad
+    for (const arg of args) {
+      const parsed = parseFloat(arg)
+      if (!isNaN(parsed) && parsed > 0) {
+        cantidad = parsed
+        break
+      }
+    }
 
-    const amount = parseInt(args[0])
+    if (!cantidad) {
+      return m.reply(`ꕥ Debes ingresar una cantidad de *${monedas}* para invertir.\n> Ejemplo: *${usedPrefix + command} 500*`)
+    }
 
-    if (isNaN(amount) || amount < 200)
-      return m.reply(`《✧》 La cantidad mínima de ${currency} para invertir es de 200.`)
+    if (cantidad < 200) {
+      return m.reply(`ꕥ La cantidad mínima para invertir es *200 ${monedas}*.`)
+    }
 
-    if (user.coins < amount)
-      return m.reply(`✎ No tienes suficientes *${currency}* para realizar la inversión.`)
+    if (user.coins < cantidad) {
+      return m.reply(`ꕥ No tienes suficientes *${monedas}* fuera del banco. Tienes *¥${user.coins.toLocaleString()} ${monedas}*.`)
+    }
 
+    // Generar tiempo de espera aleatorio (60-120 segundos)
     const tiempo = Math.floor(Math.random() * 60000) + 60000
 
-user.coins -= amount
-user.tradeCooldown = now + cooldown
-user.tradeEnd = now + tiempo
-user.tradeAmount = amount
+    // Descontar la inversión y guardar datos temporales
+    user.coins -= cantidad
+    user.tradeCooldown = now + cooldown
+    user.tradeEnd = now + tiempo
+    user.tradeAmount = cantidad
 
-    m.reply(`《✧》 Inversión iniciada con *¥${amount.toLocaleString()} ${currency}*. Resultado en *${msToTime(tiempo)}*.`)
+    m.reply(`《✧》 Inversión iniciada con *¥${cantidad.toLocaleString()} ${monedas}*. Resultado en *${msToTime(tiempo)}*.`)
 
+    // Programar el resultado
     setTimeout(async () => {
-
-      const multiplicador = Math.floor(Math.random() * 16)
+      const multiplicador = Math.floor(Math.random() * 16) // 0 a 15
       let recompensa = 0
       let mensaje = ''
 
       if (multiplicador >= 5) {
-        recompensa = amount * multiplicador
-        mensaje = `ꕥ Movimiento alcista x${multiplicador}. Ganancia total: *¥${recompensa.toLocaleString()} ${currency}*.`
+        recompensa = cantidad * multiplicador
+        mensaje = `ꕥ Movimiento alcista x${multiplicador}. Ganancia total: *¥${recompensa.toLocaleString()} ${monedas}*.`
       } else {
         recompensa = 0
-        mensaje = `✎ La operación fue liquidada. Perdiste *¥${amount.toLocaleString()} ${currency}*.`
+        mensaje = `✎ La operación fue liquidada. Perdiste *¥${cantidad.toLocaleString()} ${monedas}*.`
       }
 
+      // Sumar ganancia (si la hay)
       user.coins += recompensa
-if (!user.tradeHistory) user.tradeHistory = []
 
-user.tradeHistory.push({
-  amount: amount,
-  reward: recompensa,
-  multiplier: multiplicador,
-  time: Date.now()
-})
+      // Registrar historial
+      if (!user.tradeHistory) user.tradeHistory = []
+      user.tradeHistory.push({
+        amount: cantidad,
+        reward: recompensa,
+        multiplier: multiplicador,
+        time: Date.now()
+      })
+      if (user.tradeHistory.length > 10) user.tradeHistory.shift()
 
-if (user.tradeHistory.length > 10) user.tradeHistory.shift()
       user.tradeEnd = 0
 
-      await client.reply(chatId, mensaje, m, { mentions: [senderId] })
-
+      // Enviar resultado mencionando al usuario
+      await client.sendMessage(m.chat, {
+        text: mensaje,
+        mentions: [m.sender]
+      }, { quoted: m })
     }, tiempo)
   },
 }
