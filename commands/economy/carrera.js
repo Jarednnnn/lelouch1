@@ -1,5 +1,5 @@
 export default {
-  command: 'carrera',
+  command: 'race',
   category: 'economy',
   run: async (client, m, args, usedPrefix, command) => {
     const chatId = m.chat
