@@ -16,6 +16,9 @@ export default {
       return m.reply(`ꕥ Los comandos de *Economía* están desactivados en este grupo.\n\nUn *administrador* puede activarlos con el comando:\n» *${usedPrefix}economy on*`)
     }
 
+    // Función vital para limpiar IDs (elimina puertos :1, :2 y asegura el formato)
+    const cleanId = (id) => id ? id.split('@')[0].split(':')[0] + '@s.whatsapp.net' : ''
+
     // =================== COMANDO #carrera ===================
     if (command === 'carrera') {
       if (chat.carreraActiva) {
@@ -32,9 +35,13 @@ export default {
         }
       }
 
-      // Resolver LID a JID real (sin sufijos de dispositivo)
-      const retadorReal = await resolveLidToRealJid(m.sender, client, m.chat)
-      const opponentReal = await resolveLidToRealJid(opponentLid, client, m.chat)
+      // Resolver LID a JID real y LIMPIARLOS inmediatamente
+      let rawRetador = await resolveLidToRealJid(m.sender, client, m.chat)
+      let rawOpponent = await resolveLidToRealJid(opponentLid, client, m.chat)
+      
+      // Si el resolver falla, usamos el original, pero siempre limpio
+      const retadorReal = cleanId(rawRetador || m.sender)
+      const opponentReal = cleanId(rawOpponent || opponentLid)
 
       if (!opponentReal) {
         return m.reply('ꕥ No se pudo identificar al usuario mencionado.')
@@ -58,7 +65,7 @@ export default {
         return m.reply(`ꕥ Apuesta inválida. Debe ser un número mayor o igual a 100 ${monedas}.`)
       }
 
-      // Asegurar que existan los registros de usuario (usando JIDs resueltos)
+      // Asegurar que existan los registros de usuario
       if (!chat.users[retadorReal]) chat.users[retadorReal] = { coins: 0 }
       if (!chat.users[opponentReal]) chat.users[opponentReal] = { coins: 0 }
 
@@ -66,14 +73,12 @@ export default {
         return m.reply(`ꕥ No tienes suficientes ${monedas}. Necesitas *${apuesta} ${monedas}*.`)
       }
 
-      // Limpiar reto expirado previo (si existe)
+      // Limpiar reto expirado previo
       if (chat.retoPendiente) {
-        // Cancelar timeout asociado
         if (global.carreraTimeouts[m.chat]) {
           clearTimeout(global.carreraTimeouts[m.chat])
           delete global.carreraTimeouts[m.chat]
         }
-        // Devolver fondos al retador anterior si el reto expiró
         if (chat.retoPendiente.expiracion < Date.now()) {
           const retadorAnterior = chat.retoPendiente.retador
           if (retadorAnterior && chat.users[retadorAnterior]) {
@@ -88,16 +93,15 @@ export default {
       // Restar apuesta al retador
       chat.users[retadorReal].coins -= apuesta
 
-      // Crear reto pendiente con JIDs resueltos
+      // Crear reto pendiente
       const reto = {
         retador: retadorReal,
-        oponente: opponentReal,
+        oponente: opponentReal, // Guardamos el ID limpio
         apuestaRetador: apuesta,
-        expiracion: Date.now() + 60000 // 60 segundos
+        expiracion: Date.now() + 60000 
       }
       chat.retoPendiente = reto
 
-      // Programar expiración usando el JID real del retador
       global.carreraTimeouts[m.chat] = setTimeout(() => {
         if (chat.retoPendiente && chat.retoPendiente.retador === retadorReal) {
           if (chat.users[retadorReal]) {
@@ -109,11 +113,10 @@ export default {
         delete global.carreraTimeouts[m.chat]
       }, 60000)
 
-      // Obtener nombres para mostrar
       const retadorName = global.db.data.users?.[retadorReal]?.name || retadorReal.split('@')[0]
       const oponenteName = global.db.data.users?.[opponentReal]?.name || opponentReal.split('@')[0]
 
-      const mensajeReto = `╭┈ࠢ͜┅ࠦ͜͜╾݊͜─ׄ͜─֬͜─֟͜─֫͜─ׄ͜─݊͜┅ࠡ͜͜┈࠭͜
+      const mensajeReto = `╭┈ࠢ͜┅ࠦ͜͜╾݊͜─ׄ͜─֬͜─֟͜─֫͜─ׄ͜─݊͜┅ࠡ͜͜┈࠭͜
 │        𐔌 RETO DE CARRERA 𐦯
 │
 │ 🐎 *${retadorName}* reta a *${oponenteName}*
@@ -124,7 +127,7 @@ export default {
 │ *${usedPrefix}aceptarcarrera*
 │
 │ Este reto expirará en 60 segundos.
-╰┈ࠢ͜─ׄ͜─ׄ͜─ׄ͜─ׄ͜─ׄ͜─ׄ͜─ׄ͜─ׄ͜┈ࠢ͜╯`
+╰┈ࠢ͜─ׄ͜─ׄ͜─ׄ͜─ׄ͜─ׄ͜─ׄ͜─ׄ͜─ׄ͜┈ࠢ͜╯`
       await client.sendMessage(m.chat, { text: mensajeReto }, { quoted: m })
     }
 
@@ -136,23 +139,21 @@ export default {
 
       const reto = chat.retoPendiente
 
-      // Resolver JID real del usuario que ejecuta el comando
-      const senderReal = await resolveLidToRealJid(m.sender, client, m.chat)
+      // Resolver y LIMPIAR el ID del que acepta
+      let rawSender = await resolveLidToRealJid(m.sender, client, m.chat)
+      const senderReal = cleanId(rawSender || m.sender)
 
-      // Comparar directamente con el oponente almacenado (ya resuelto)
+      // Comparación exacta y limpia
       if (senderReal !== reto.oponente) {
         const oponenteName = global.db.data.users?.[reto.oponente]?.name || reto.oponente.split('@')[0]
         return m.reply(`ꕥ Solo *${oponenteName}* puede aceptar este reto.`)
       }
 
-      // Verificar expiración
       if (reto.expiracion < Date.now()) {
-        // Devolver fondos al retador
         if (chat.users[reto.retador]) {
           chat.users[reto.retador].coins += reto.apuestaRetador
         }
         delete chat.retoPendiente
-        // Cancelar timeout si existe
         if (global.carreraTimeouts[m.chat]) {
           clearTimeout(global.carreraTimeouts[m.chat])
           delete global.carreraTimeouts[m.chat]
@@ -160,36 +161,27 @@ export default {
         return m.reply('ꕥ El reto de carrera ha expirado.')
       }
 
-      // Asegurar que el aceptante tenga registro de usuario
       if (!chat.users[senderReal]) chat.users[senderReal] = { coins: 0 }
       const user = chat.users[senderReal]
 
-      // Verificar fondos del aceptante
       if (user.coins < reto.apuestaRetador) {
         return m.reply(`ꕥ No tienes suficientes ${monedas} para igualar la apuesta de *${reto.apuestaRetador} ${monedas}*.`)
       }
 
-      // Restar apuesta del aceptante
       user.coins -= reto.apuestaRetador
 
-      // Cancelar el timeout de expiración
       if (global.carreraTimeouts[m.chat]) {
         clearTimeout(global.carreraTimeouts[m.chat])
         delete global.carreraTimeouts[m.chat]
       }
 
-      // Eliminar reto pendiente
       delete chat.retoPendiente
 
-      // Iniciar la carrera (pasamos los JIDs resueltos ya incluidos en reto)
       await iniciarCarrera(client, m.chat, senderReal, reto, monedas, global.db.data)
     }
   }
 }
 
-/**
- * Función que inicia la carrera (sin cambios en la lógica)
- */
 async function iniciarCarrera(client, chatId, userIdAceptante, reto, monedas, dbData) {
   const chat = dbData.chats[chatId]
   const users = chat.users
@@ -228,7 +220,7 @@ async function iniciarCarrera(client, chatId, userIdAceptante, reto, monedas, db
   function construirMensajeCarrera() {
     const pistaRetador = generarPista(carrera.jugadores[0])
     const pistaOponente = generarPista(carrera.jugadores[1])
-    return `╭┈ࠢ͜┅ࠦ͜͜╾݊͜─ׄ͜─֬͜─֟͜─֫͜─ׄ͜─݊͜┅ࠡ͜͜┈࠭͜
+    return `╭┈ࠢ͜┅ࠦ͜͜╾݊͜─ׄ͜─֬͜─֟͜─֫͜─ׄ͜─݊͜┅ࠡ͜͜┈࠭͜
 │        𐔌 CARRERA 𐦯
 │
 │ 🐎 ${carrera.jugadores[0].nombre}
@@ -238,7 +230,7 @@ async function iniciarCarrera(client, chatId, userIdAceptante, reto, monedas, db
 │ ${pistaOponente}
 │
 │ El primero en llegar gana *${premioTotal} ${monedas}*
-╰┈ࠢ͜─ׄ͜─ׄ͜─ׄ͜─ׄ͜─ׄ͜─ׄ͜─ׄ͜─ׄ͜┈ࠢ͜╯`
+╰┈ࠢ͜─ׄ͜─ׄ͜─ׄ͜─ׄ͜─ׄ͜─ׄ͜─ׄ͜─ׄ͜┈ࠢ͜╯`
   }
 
   function mover() {
@@ -279,7 +271,7 @@ async function iniciarCarrera(client, chatId, userIdAceptante, reto, monedas, db
           pistaPerdedor = '-'.repeat(longitudMeta) + '🐎🏁'
         }
 
-        const mensajeFinal = `╭┈ࠢ͜┅ࠦ͜͜╾݊͜─ׄ͜─֬͜─֟͜─֫͜─ׄ͜─݊͜┅ࠡ͜͜┈࠭͜
+        const mensajeFinal = `╭┈ࠢ͜┅ࠦ͜͜╾݊͜─ׄ͜─֬͜─֟͜─֫͜─ׄ͜─݊͜┅ࠡ͜͜┈࠭͜
 │        𐔌 CARRERA FINALIZADA 𐦯
 │
 │ 🐎 ${ganador.nombre}
@@ -290,12 +282,12 @@ async function iniciarCarrera(client, chatId, userIdAceptante, reto, monedas, db
 │
 │ *Ganador:* @${ganadorId.split('@')[0]}
 │ *Premio:* +${premioTotal} ${monedas}
-╰┈ࠢ͜─ׄ͜─ׄ͜─ׄ͜─ׄ͜─ׄ͜─ׄ͜─ׄ͜─ׄ͜┈ࠢ͜╯`
+╰┈ࠢ͜─ׄ͜─ׄ͜─ׄ͜─ׄ͜─ׄ͜─ׄ͜─ׄ͜─ׄ͜┈ࠢ͜╯`
         client.sendMessage(chatId, { text: mensajeFinal, edit: carrera.mensajeId, mentions: [ganadorId] })
       } else {
         users[retadorId].coins += apuesta
         users[oponenteId].coins += apuesta
-        const mensajeEmpate = `╭┈ࠢ͜┅ࠦ͜͜╾݊͜─ׄ͜─֬͜─֟͜─֫͜─ׄ͜─݊͜┅ࠡ͜͜┈࠭͜
+        const mensajeEmpate = `╭┈ࠢ͜┅ࠦ͜͜╾݊͜─ׄ͜─֬͜─֟͜─֫͜─ׄ͜─݊͜┅ࠡ͜͜┈࠭͜
 │        𐔌 CARRERA FINALIZADA 𐦯
 │
 │ 🐎 ${nombreRetador}
@@ -305,7 +297,7 @@ async function iniciarCarrera(client, chatId, userIdAceptante, reto, monedas, db
 │ ${'-'.repeat(longitudMeta)}🐎
 │
 │ *¡Empate!* Se devuelven las apuestas.
-╰┈ࠢ͜─ׄ͜─ׄ͜─ׄ͜─ׄ͜─ׄ͜─ׄ͜─ׄ͜─ׄ͜┈ࠢ͜╯`
+╰┈ࠢ͜─ׄ͜─ׄ͜─ׄ͜─ׄ͜─ׄ͜─ׄ͜─ׄ͜─ׄ͜┈ࠢ͜╯`
         client.sendMessage(chatId, { text: mensajeEmpate, edit: carrera.mensajeId })
       }
 
