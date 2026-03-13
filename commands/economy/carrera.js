@@ -1,11 +1,14 @@
 // Almacén global de timeouts
 global.carreraTimeouts = global.carreraTimeouts || {}
+import { resolveLidToRealJid } from '../../lib/utils.js'
 
 export default {
   command: ['carrera', 'aceptarcarrera'],
   category: 'economy',
   run: async (client, m, args, usedPrefix, command) => {
-    const chat = global.db.data.chats[m.chat]
+    const chat = global.db.data.chats[m.chat] ||= {}
+    chat.users ||= {}
+    chat.retoPendiente ||= null
     const botId = client.user.id.split(':')[0] + '@s.whatsapp.net'
     const monedas = global.db.data.settings[botId].currency
 
@@ -13,32 +16,18 @@ export default {
       return m.reply(`ꕥ Los comandos de *Economía* están desactivados.\n» *${usedPrefix}economy on*`)
     }
 
-    // --- FUNCIÓN DE NORMALIZACIÓN TOTAL ---
-    // Convierte cualquier ID (LID o JID con puerto) al JID real del usuario
-    const toRealJid = async (id) => {
-      if (!id) return null
-      const simpleId = id.split('@')[0].split(':')[0]
-      try {
-        const metadata = await client.groupMetadata(m.chat)
-        const participant = metadata.participants.find(p => 
-          p.id.includes(simpleId) || (p.lid && p.lid.includes(simpleId))
-        )
-        return participant ? participant.id.split('@')[0] + '@s.whatsapp.net' : simpleId + '@s.whatsapp.net'
-      } catch {
-        return simpleId + '@s.whatsapp.net'
-      }
-    }
-
     // =================== COMANDO #carrera ===================
     if (command === 'carrera') {
       if (chat.carreraActiva) return m.reply('ꕥ Ya hay una carrera en curso.')
 
-      let rawOpponent = m.mentionedJid?.[0] || m.quoted?.sender
+      // Obtener mencionado o citado (igual que en giveallharem)
+      const mentionedJid = m.mentionedJid
+      const rawOpponent = mentionedJid[0] || (m.quoted ? m.quoted.sender : null)
       if (!rawOpponent) return m.reply(`ꕥ Menciona a alguien.\n> Ejemplo: *${usedPrefix}carrera @usuario 200*`)
 
       // Normalizamos ambos IDs a su versión real (número de teléfono)
-      const retador = await toRealJid(m.sender)
-      const oponente = await toRealJid(rawOpponent)
+      const retador = await resolveLidToRealJid(m.sender, client, m.chat)
+      const oponente = await resolveLidToRealJid(rawOpponent, client, m.chat)
 
       if (retador === oponente) return m.reply('ꕥ No puedes jugar contra ti mismo.')
 
@@ -71,15 +60,8 @@ export default {
       const nRetador = global.db.data.users[retador]?.name || retador.split('@')[0]
       const nOponente = global.db.data.users[oponente]?.name || oponente.split('@')[0]
 
-      const mensaje = `╭┈ࠢ͜┅ࠦ͜͜╾݊͜─ׄ͜─֬͜─֟͜─֫͜─ׄ͜─݊͜┅ࠡ͜͜┈࠭͜
-│        𐔌 RETO DE CARRERA 𐦯
-│
-│ 🐎 *${nRetador}* reta a *${nOponente}*
-│
-│ Apuesta: *${apuesta} ${monedas}* cada uno
-│
-│ Para aceptar: *${usedPrefix}aceptarcarrera*
-╰┈ࠢ͜─ׄ͜─ׄ͜─ׄ͜─ׄ͜─ׄ͜─ׄ͜─ׄ͜─ׄ͜┈ࠢ͜╯`
+      // Mensaje con decoración estilo giveallharem
+      const mensaje = `「✿」 *${nRetador}*, ¿confirmas retar a *${nOponente}*?\n\n❏ Apuesta: *${apuesta} ${monedas}* cada uno\n\n✐ Para aceptar escribe *${usedPrefix}aceptarcarrera*`
       await client.sendMessage(m.chat, { text: mensaje, mentions: [retador, oponente] }, { quoted: m })
     }
 
@@ -88,10 +70,10 @@ export default {
       if (!chat.retoPendiente) return m.reply('ꕥ No hay retos pendientes.')
 
       // Normalizamos el ID del que intenta aceptar
-      const quienAcepta = await toRealJid(m.sender)
+      const quienAcepta = await resolveLidToRealJid(m.sender, client, m.chat)
       const reto = chat.retoPendiente
 
-      // COMPARACIÓN DE SEGURIDAD (Limpiamos de nuevo para estar 100% seguros)
+      // Comparación de seguridad
       if (quienAcepta.split('@')[0] !== reto.oponente.split('@')[0]) {
         const nombreOponente = global.db.data.users[reto.oponente]?.name || reto.oponente.split('@')[0]
         return m.reply(`ꕥ Solo *${nombreOponente}* puede aceptar este reto.`)
@@ -136,11 +118,11 @@ async function iniciarCarrera(client, chatId, oponenteId, reto, monedas, dbData)
   const buildPista = () => {
     return carrera.jugadores.map(j => {
       const p = j.pos >= carrera.meta ? '-'.repeat(carrera.meta) + '🐎🏁' : '-'.repeat(j.pos) + '🐎' + '-'.repeat(carrera.meta - j.pos - 1) + '🏁'
-      return `│ 🐎 ${j.nombre}\n│ ${p}`
-    }).join('\n│\n')
+      return `❏ ${j.nombre}\n  ${p}`
+    }).join('\n\n')
   }
 
-  const { key } = await client.sendMessage(chatId, { text: `╭┈ࠢ͜┅ࠦ͜͜╾݊͜─ׄ͜─֬͜─֟͜─֫͜─ׄ͜─݊͜┅ࠡ͜͜┈࠭͜\n│        𐔌 CARRERA 𐦯\n│\n${buildPista()}\n│\n│ Premio: *${premio} ${monedas}*\n╰┈ࠢ͜─ׄ͜─ׄ͜─ׄ͜─ׄ͜─ׄ͜─ׄ͜─ׄ͜─ׄ͜┈ࠢ͜╯` })
+  const { key } = await client.sendMessage(chatId, { text: `「✿」 *CARRERA INICIADA*\n\n${buildPista()}\n\n❏ Premio: *${premio} ${monedas}*` })
   carrera.msgId = key.id
 
   const intervalo = setInterval(async () => {
@@ -150,11 +132,11 @@ async function iniciarCarrera(client, chatId, oponenteId, reto, monedas, dbData)
     if (ganador) {
       clearInterval(intervalo)
       dbData.chats[chatId].users[ganador.id].coins += premio
-      const finalMsg = `╭┈ࠢ͜┅ࠦ͜͜╾݊͜─ׄ͜─֬͜─֟͜─֫͜─ׄ͜─݊͜┅ࠡ͜͜┈࠭͜\n│    𐔌 CARRERA FINALIZADA 𐦯\n│\n${buildPista()}\n│\n│ *Ganador:* @${ganador.id.split('@')[0]}\n│ *Premio:* +${premio} ${monedas}\n╰┈ࠢ͜─ׄ͜─ׄ͜─ׄ͜─ׄ͜─ׄ͜─ׄ͜─ׄ͜─ׄ͜┈ࠢ͜╯`
+      const finalMsg = `「✿」 *CARRERA FINALIZADA*\n\n${buildPista()}\n\n❏ Ganador: @${ganador.id.split('@')[0]}\n❏ Premio: +${premio} ${monedas}`
       await client.sendMessage(chatId, { text: finalMsg, edit: key, mentions: [ganador.id] })
       delete chat.carreraActiva
     } else {
-      await client.sendMessage(chatId, { text: `╭┈ࠢ͜┅ࠦ͜͜╾݊͜─ׄ͜─֬͜─֟͜─֫͜─ׄ͜─݊͜┅ࠡ͜͜┈࠭͜\n│        𐔌 CARRERA 𐦯\n│\n${buildPista()}\n│\n│ Premio: *${premio} ${monedas}*\n╰┈ࠢ͜─ׄ͜─ׄ͜─ׄ͜─ׄ͜─ׄ͜─ׄ͜─ׄ͜─ׄ͜┈ࠢ͜╯`, edit: key })
+      await client.sendMessage(chatId, { text: `「✿」 *CARRERA*\n\n${buildPista()}\n\n❏ Premio: *${premio} ${monedas}*`, edit: key })
     }
   }, 2500)
 }
