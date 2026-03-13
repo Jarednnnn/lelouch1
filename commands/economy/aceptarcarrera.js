@@ -1,5 +1,4 @@
 import { resolveLidToRealJid } from "../../lib/utils.js"
-import chalk from 'chalk' // Asegúrate de tener chalk instalado
 
 export default {
   command: 'aceptarcarrera',
@@ -10,46 +9,44 @@ export default {
     const botId = client.user.id.split(':')[0] + '@s.whatsapp.net'
     const monedas = global.db.data.settings[botId].currency
 
-    // ========== INICIO LOGS ==========
-    console.log(chalk.bgYellow.black('⚡ ACEPTARCARRERA EJECUTADO'))
-    console.log(chalk.cyan('Sender original (m.sender):'), m.sender)
-    // ========== FIN LOGS ==========
+    // Logs para depuración
+    console.log('=================================')
+    console.log('📌 Comando #aceptarcarrera ejecutado')
+    console.log('📌 m.sender original:', m.sender)
+    console.log('📌 chat.retoPendiente:', chat.retoPendiente)
 
     if (chat.adminonly || !chat.economy) {
       return m.reply(`ꕥ Los comandos de *Economía* están desactivados en este grupo.\n\nUn *administrador* puede activarlos con el comando:\n» *${usedPrefix}economy on*`)
     }
 
-    // Verificar que hay un reto pendiente
     if (!chat.retoPendiente) {
-      console.log(chalk.red('No hay reto pendiente'))
+      console.log('❌ No hay reto pendiente')
       return m.reply('ꕥ No hay ningún reto de carrera pendiente en este grupo.')
     }
 
     const reto = chat.retoPendiente
-    console.log(chalk.green('Reto encontrado:'), reto)
 
-    // Obtener el JID real del usuario que ejecuta el comando (por si es LID)
+    // Obtener el JID real del usuario que ejecuta el comando
     const senderReal = await resolveLidToRealJid(m.sender, client, m.chat)
-    console.log(chalk.magenta('senderReal después de resolveLidToRealJid:'), senderReal)
+    console.log('📌 senderReal (después de resolveLidToRealJid):', senderReal)
 
     // Extraer solo la parte numérica (antes del @)
     const senderNum = senderReal.split('@')[0]
     const oponenteNum = reto.oponente.split('@')[0]
 
-    console.log(chalk.blue('senderNum (extraído):'), senderNum)
-    console.log(chalk.blue('oponenteNum (extraído):'), oponenteNum)
+    console.log('📌 senderNum:', senderNum)
+    console.log('📌 oponenteNum:', oponenteNum)
 
     if (senderNum !== oponenteNum) {
-      console.log(chalk.red('❌ Comparación falló:'), senderNum, '!==', oponenteNum)
+      console.log('❌ Los números no coinciden')
       const oponenteName = global.db.data.users?.[reto.oponente]?.name || oponenteNum
       return m.reply(`ꕥ Solo *${oponenteName}* puede aceptar este reto.`)
-    } else {
-      console.log(chalk.green('✅ Comparación exitosa'))
     }
 
-    // Verificar expiración
+    console.log('✅ Los números coinciden, continuando...')
+
     if (reto.expiracion < Date.now()) {
-      console.log(chalk.yellow('Reto expirado'))
+      console.log('❌ Reto expirado')
       if (chat.users[reto.retador]) {
         chat.users[reto.retador].coins += reto.apuestaRetador
       }
@@ -57,15 +54,14 @@ export default {
       return m.reply('ꕥ El reto de carrera ha expirado.')
     }
 
-    // Verificar fondos del aceptante
     if (user.coins < reto.apuestaRetador) {
-      console.log(chalk.yellow('Fondos insuficientes'))
+      console.log('❌ Fondos insuficientes')
       return m.reply(`ꕥ No tienes suficientes ${monedas} para igualar la apuesta de *${reto.apuestaRetador} ${monedas}*.`)
     }
 
     // Restar apuesta del aceptante
     user.coins -= reto.apuestaRetador
-    console.log(chalk.green('Apuesta restada, nuevo saldo:'), user.coins)
+    console.log('✅ Apuesta restada, nuevo saldo:', user.coins)
 
     // Cancelar timeout de expiración
     clearTimeout(reto.timeout)
@@ -78,9 +74,6 @@ export default {
   }
 }
 
-/**
- * Función que inicia la carrera
- */
 async function iniciarCarrera(client, chatId, userIdAceptante, reto, monedas, dbData) {
   const chat = dbData.chats[chatId]
   const users = chat.users
@@ -88,8 +81,6 @@ async function iniciarCarrera(client, chatId, userIdAceptante, reto, monedas, db
   const oponenteId = reto.oponente
   const apuesta = reto.apuestaRetador
   const premioTotal = apuesta * 2
-
-  console.log(chalk.cyan('🏁 Iniciando carrera entre:'), retadorId, 'y', oponenteId)
 
   const nombreRetador = dbData.users?.[retadorId]?.name || retadorId.split('@')[0]
   const nombreOponente = dbData.users?.[oponenteId]?.name || oponenteId.split('@')[0]
