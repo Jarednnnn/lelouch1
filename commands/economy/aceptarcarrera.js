@@ -9,44 +9,27 @@ export default {
     const botId = client.user.id.split(':')[0] + '@s.whatsapp.net'
     const monedas = global.db.data.settings[botId].currency
 
-    // Logs para depuración
-    console.log('=================================')
-    console.log('📌 Comando #aceptarcarrera ejecutado')
-    console.log('📌 m.sender original:', m.sender)
-    console.log('📌 chat.retoPendiente:', chat.retoPendiente)
-
     if (chat.adminonly || !chat.economy) {
       return m.reply(`ꕥ Los comandos de *Economía* están desactivados en este grupo.\n\nUn *administrador* puede activarlos con el comando:\n» *${usedPrefix}economy on*`)
     }
 
     if (!chat.retoPendiente) {
-      console.log('❌ No hay reto pendiente')
       return m.reply('ꕥ No hay ningún reto de carrera pendiente en este grupo.')
     }
 
     const reto = chat.retoPendiente
 
-    // Obtener el JID real del usuario que ejecuta el comando
     const senderReal = await resolveLidToRealJid(m.sender, client, m.chat)
-    console.log('📌 senderReal (después de resolveLidToRealJid):', senderReal)
 
-    // Extraer solo la parte numérica (antes del @)
     const senderNum = senderReal.split('@')[0]
     const oponenteNum = reto.oponente.split('@')[0]
 
-    console.log('📌 senderNum:', senderNum)
-    console.log('📌 oponenteNum:', oponenteNum)
-
     if (senderNum !== oponenteNum) {
-      console.log('❌ Los números no coinciden')
       const oponenteName = global.db.data.users?.[reto.oponente]?.name || oponenteNum
       return m.reply(`ꕥ Solo *${oponenteName}* puede aceptar este reto.`)
     }
 
-    console.log('✅ Los números coinciden, continuando...')
-
     if (reto.expiracion < Date.now()) {
-      console.log('❌ Reto expirado')
       if (chat.users[reto.retador]) {
         chat.users[reto.retador].coins += reto.apuestaRetador
       }
@@ -55,21 +38,15 @@ export default {
     }
 
     if (user.coins < reto.apuestaRetador) {
-      console.log('❌ Fondos insuficientes')
       return m.reply(`ꕥ No tienes suficientes ${monedas} para igualar la apuesta de *${reto.apuestaRetador} ${monedas}*.`)
     }
 
-    // Restar apuesta del aceptante
     user.coins -= reto.apuestaRetador
-    console.log('✅ Apuesta restada, nuevo saldo:', user.coins)
 
-    // Cancelar timeout de expiración
     clearTimeout(reto.timeout)
 
-    // Eliminar reto pendiente
     delete chat.retoPendiente
 
-    // Iniciar la carrera
     await iniciarCarrera(client, m.chat, m.sender, reto, monedas, global.db.data)
   }
 }
@@ -98,6 +75,7 @@ async function iniciarCarrera(client, chatId, userIdAceptante, reto, monedas, db
     intervalo: null,
     iniciada: Date.now()
   }
+
   chat.carreraActiva = carrera
 
   function generarPista(jugador) {
@@ -112,6 +90,7 @@ async function iniciarCarrera(client, chatId, userIdAceptante, reto, monedas, db
   function construirMensajeCarrera() {
     const pistaRetador = generarPista(carrera.jugadores[0])
     const pistaOponente = generarPista(carrera.jugadores[1])
+
     return `╭┈ࠢ͜┅ࠦ͜͜╾݊͜─ׄ͜─֬͜─֟͜─֫͜─ׄ͜─݊͜┅ࠡ͜͜┈࠭͜
 │        𐔌 CARRERA 𐦯
 │
@@ -135,11 +114,13 @@ async function iniciarCarrera(client, chatId, userIdAceptante, reto, monedas, db
     })
 
     const jugadoresLlegados = carrera.jugadores.filter(j => j.posicion >= longitudMeta)
+
     if (jugadoresLlegados.length > 0) {
       terminada = true
       clearInterval(carrera.intervalo)
 
       let ganadorId = null
+
       if (jugadoresLlegados.length === 1) {
         ganadorId = jugadoresLlegados[0].id
       } else {
@@ -152,10 +133,12 @@ async function iniciarCarrera(client, chatId, userIdAceptante, reto, monedas, db
 
       if (ganadorId) {
         users[ganadorId].coins += premioTotal
+
         const ganador = carrera.jugadores.find(j => j.id === ganadorId)
         const perdedor = carrera.jugadores.find(j => j.id !== ganadorId)
 
         const pistaGanador = '-'.repeat(longitudMeta) + '🐎'
+
         let pistaPerdedor
         if (perdedor.posicion < longitudMeta) {
           pistaPerdedor = '-'.repeat(perdedor.posicion) + '🐎' + '-'.repeat(longitudMeta - perdedor.posicion - 1) + '🏁'
@@ -175,10 +158,12 @@ async function iniciarCarrera(client, chatId, userIdAceptante, reto, monedas, db
 │ *Ganador:* @${ganadorId.split('@')[0]}
 │ *Premio:* +${premioTotal} ${monedas}
 ╰┈ࠢ͜─ׄ͜─ׄ͜─ׄ͜─ׄ͜─ׄ͜─ׄ͜─ׄ͜─ׄ͜┈ࠢ͜╯`
+
         client.sendMessage(chatId, { text: mensajeFinal, edit: carrera.mensajeId, mentions: [ganadorId] })
       } else {
         users[retadorId].coins += apuesta
         users[oponenteId].coins += apuesta
+
         const mensajeEmpate = `╭┈ࠢ͜┅ࠦ͜͜╾݊͜─ׄ͜─֬͜─֟͜─֫͜─ׄ͜─݊͜┅ࠡ͜͜┈࠭͜
 │        𐔌 CARRERA FINALIZADA 𐦯
 │
@@ -190,17 +175,18 @@ async function iniciarCarrera(client, chatId, userIdAceptante, reto, monedas, db
 │
 │ *¡Empate!* Se devuelven las apuestas.
 ╰┈ࠢ͜─ׄ͜─ׄ͜─ׄ͜─ׄ͜─ׄ͜─ׄ͜─ׄ͜─ׄ͜┈ࠢ͜╯`
+
         client.sendMessage(chatId, { text: mensajeEmpate, edit: carrera.mensajeId })
       }
 
       delete chat.carreraActiva
     } else {
-      const nuevoTexto = construirMensajeCarrera()
-      client.sendMessage(chatId, { text: nuevoTexto, edit: carrera.mensajeId })
+      client.sendMessage(chatId, { text: construirMensajeCarrera(), edit: carrera.mensajeId })
     }
   }
 
   const msgInicial = await client.sendMessage(chatId, { text: construirMensajeCarrera() })
+
   carrera.mensajeId = msgInicial.key.id
   carrera.intervalo = setInterval(mover, 2000)
 }
