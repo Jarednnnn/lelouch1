@@ -81,7 +81,7 @@ export default {
             chat.users[m.sender].coins += apuesta
           }
           delete chat.retoPendiente
-          client.sendMessage(m.chat, { text: '⏳ El reto de carrera ha expirado por falta de respuesta.' })
+          client.sendMessage(m.chat, { text: 'ꕥ El reto de carrera ha expirado por falta de respuesta.' })
         }
       }, 60000)
       chat.retoPendiente.timeout = timeout
@@ -126,7 +126,7 @@ export default {
           chat.users[reto.retador].coins += reto.apuestaRetador
         }
         delete chat.retoPendiente
-        return m.reply('⏳ El reto de carrera ha expirado.')
+        return m.reply('ꕥ El reto de carrera ha expirado.')
       }
 
       // Verificar fondos del aceptante
