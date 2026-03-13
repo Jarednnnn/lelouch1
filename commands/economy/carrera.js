@@ -1,6 +1,6 @@
 export default {
   command: ['carrera', 'aceptarcarrera'],
-  category: 'economy',
+  category: 'rpg',
   run: async (client, m, args, usedPrefix, command) => {
     const chatId = m.chat
     const userId = m.sender
