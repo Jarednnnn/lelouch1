@@ -19,7 +19,8 @@ export default {
       steal: Math.max(0, (user.laststeal || 0) - now),
       daily: Math.max(0, (user.lastdaily || 0) + oneDay - now),
       weekly: Math.max(0, (user.lastweekly || 0) + 7 * oneDay - now),
-      monthly: Math.max(0, (user.lastmonthly || 0) + 30 * oneDay - now)
+      monthly: Math.max(0, (user.lastmonthly || 0) + 30 * oneDay - now),
+      trade: Math.max(0, (user.tradeCooldown || 0) - now)
     }
     const formatTime = (ms) => {
       const totalSeconds = Math.floor(ms / 1000)
@@ -44,6 +45,7 @@ export default {
 ⴵ Mine » *${formatTime(cooldowns.mine)}*
 ⴵ Ritual » *${formatTime(cooldowns.ritual)}*
 ⴵ Steal » *${formatTime(cooldowns.steal)}*
+ⴵ Invertir » *${formatTime(cooldowns.trade)}*
 ⴵ Daily » *${formatTime(cooldowns.daily)}*
 ⴵ Weekly » *${formatTime(cooldowns.weekly)}*
 ⴵ Monthly » *${formatTime(cooldowns.monthly)}*
